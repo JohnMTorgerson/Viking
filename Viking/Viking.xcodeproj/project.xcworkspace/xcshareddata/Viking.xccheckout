@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>IDESourceControlProjectFavoriteDictionaryKey</key>
+	<false/>
+	<key>IDESourceControlProjectIdentifier</key>
+	<string>12617C2B-7609-48DA-9A65-278FA99942FF</string>
+	<key>IDESourceControlProjectName</key>
+	<string>Viking</string>
+	<key>IDESourceControlProjectOriginsDictionary</key>
+	<dict>
+		<key>049A6C3F52FCE856543F87FB4F42092E2BCFF3A8</key>
+		<string>https://github.com/JohnMTorgerson/Viking.git</string>
+	</dict>
+	<key>IDESourceControlProjectPath</key>
+	<string>Viking/Viking.xcodeproj</string>
+	<key>IDESourceControlProjectRelativeInstallPathDictionary</key>
+	<dict>
+		<key>049A6C3F52FCE856543F87FB4F42092E2BCFF3A8</key>
+		<string>../../..</string>
+	</dict>
+	<key>IDESourceControlProjectURL</key>
+	<string>https://github.com/JohnMTorgerson/Viking.git</string>
+	<key>IDESourceControlProjectVersion</key>
+	<integer>111</integer>
+	<key>IDESourceControlProjectWCCIdentifier</key>
+	<string>049A6C3F52FCE856543F87FB4F42092E2BCFF3A8</string>
+	<key>IDESourceControlProjectWCConfigurations</key>
+	<array>
+		<dict>
+			<key>IDESourceControlRepositoryExtensionIdentifierKey</key>
+			<string>public.vcs.git</string>
+			<key>IDESourceControlWCCIdentifierKey</key>
+			<string>049A6C3F52FCE856543F87FB4F42092E2BCFF3A8</string>
+			<key>IDESourceControlWCCName</key>
+			<string>Viking</string>
+		</dict>
+	</array>
+</dict>
+</plist>
