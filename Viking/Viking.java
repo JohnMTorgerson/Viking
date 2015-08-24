@@ -59,6 +59,7 @@ public class Viking implements LuxAgent
     
     public void placeInitialArmies( int numberOfArmies )
     {
+        int bestCont = pickBestContintent();
     }
     
     public void cardsPhase( Card[] cards )
@@ -96,6 +97,48 @@ public class Viking implements LuxAgent
     public String message( String message, Object data )
     {
         return null;
+    }
+    
+    protected int pickBestContintent() {
+        int goalCont = -1; // the continent we will choose
+        float bestFitness = 0; // the continent with the best fitness so far
+        float fitness; // the fitness of the current continent in each loop
+        int numConts = BoardHelper.numberOfContinents(countries); // number of continents
+        // declare the factors for each continent from which we'll calculate the fitness
+        int bonus, numCountriesOwned, numArmiesOwned, numCountries, numEnemyArmies, numBorders;
+        
+        // loop through all the continents and calculate their fitness, picking the highest one
+        for(int cont = 0; cont < numConts; cont++) {
+            // get the factors for the continent to calculate the fitness
+            bonus = board.getContinentBonus(cont); // bonus
+            numCountriesOwned = getPlayerCountriesInContinent(ID, cont, countries).length; // how many countries we own in cont
+            numArmiesOwned = BoardHelper.getPlayerArmiesInContinent(ID, cont, countries); // how many of our armies in cont
+            numCountries = BoardHelper.getContinentSize(cont, countries); // how many countries in cont
+            numEnemyArmies = BoardHelper.getEnemyArmiesInContinent(ID, cont, countries); // how many enemy armies in cont
+            numBorders = getSmartContinentBorders(cont, countries).length; // how many border countries
+            
+            String name = board.getContinentName(cont);
+            
+            String message = "name = " + name + "\n bonus = " + bonus + "\n numCountriesOwned = " + numCountriesOwned + "\n numArmiesOwned = " + numArmiesOwned + "\n numCountries = " + numCountries + "\n numEnemyArmies = " + numEnemyArmies + "\n numBorders = " + numBorders + "\n\n";
+            
+            board.sendChat(message);
+            
+        }
+        
+        return 0;
+    }
+    
+    // helper function to return an array of the countries we own in a given continent
+    protected int[] getPlayerCountriesInContinent(int ID, int cont, Country[] countries) {
+        int[] a = {0,1,2};
+        return a;
+    }
+    
+    // custom get continent borders function
+    protected int[] getSmartContinentBorders(int cont, Country[] countries) {
+        // eventually this function will pick borders of the continent that may include countries outside of the continent itself such that the number of borders to defend is smaller.
+        // For now, it will just call the regular BoardHelper function to get the actual borders
+        return BoardHelper.getContinentBorders(cont, countries);
     }
     
 }
