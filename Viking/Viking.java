@@ -52,11 +52,13 @@ public class Viking implements LuxAgent
         return "Viking is a bot";
     }
     
+    // pick initial countries at the beginning of the game. We will do this later.
     public int pickCountry()
     {
         return -1;
     }
     
+    // place initial armies at the beginning of the game
     public void placeInitialArmies( int numberOfArmies )
     {
         int bestCont = pickBestContintent();
@@ -83,6 +85,7 @@ public class Viking implements LuxAgent
     {
     }
     
+    // called when we win the game
     public String youWon()
     { 
         // For variety we store a bunch of answers and pick one at random to return.
@@ -99,7 +102,14 @@ public class Viking implements LuxAgent
         return null;
     }
     
+    /*
+     *   ********* HELPER / CUSTOM FUNCTIONS *********
+     */
+    
+    // helper function to select the most ideal continent to pursue based on several factors,
+    // such as size, bonus, number of countries we own, etc...
     protected int pickBestContintent() {
+        
         int goalCont = -1; // the continent we will choose
         float bestFitness = 0; // the continent with the best fitness so far
         float fitness; // the fitness of the current continent in each loop
@@ -109,6 +119,7 @@ public class Viking implements LuxAgent
         
         // loop through all the continents and calculate their fitness, picking the highest one
         for(int cont = 0; cont < numConts; cont++) {
+            
             // get the factors for the continent to calculate the fitness
             bonus = board.getContinentBonus(cont); // bonus
             numCountriesOwned = getPlayerCountriesInContinent(ID, cont, countries).length; // how many countries we own in cont
@@ -128,10 +139,27 @@ public class Viking implements LuxAgent
         return 0;
     }
     
-    // helper function to return an array of the countries we own in a given continent
+    // helper function to return an array of the countries a player owns in a given continent
     protected int[] getPlayerCountriesInContinent(int ID, int cont, Country[] countries) {
-        int[] a = {0,1,2};
-        return a;
+        // continent iterator returns all countries in 'cont',
+        // player iterator returns all countries out of those owned by 'ID'
+        // this gives us the list of all the countries we own in the continent
+        CountryIterator theCountries = new PlayerIterator(ID, new ContinentIterator(cont, countries));
+        
+        // Put all the countries we own into an ArrayList
+        ArrayList countryArray = new ArrayList();
+        while (theCountries.hasNext()) {
+            countryArray.add(theCountries.next());
+        }
+        
+        // Put the country code of each of the countries into an integer array
+        int size = countryArray.size();
+        int[] intArray = new int[size];
+        for(int i=0; i < size; i++) {
+            intArray[i] = ((Country)countryArray.get(i)).getCode();
+        }
+        
+        return intArray;
     }
     
     // custom get continent borders function
