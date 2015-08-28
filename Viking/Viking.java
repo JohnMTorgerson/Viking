@@ -115,7 +115,10 @@ public class Viking implements LuxAgent
         float fitness; // the fitness of the current continent in each loop
         int numConts = BoardHelper.numberOfContinents(countries); // number of continents
         // declare the factors for each continent from which we'll calculate the fitness
-        int bonus, numCountriesOwned, numArmiesOwned, numCountries, numEnemyArmies, numBorders;
+        float bonus, numCountriesOwned, numArmiesOwned, numCountries, numEnemyArmies, numBorders;
+        
+        ArrayList<String> fitnessList = new ArrayList<String>();
+        String message, name, couplet;
         
         // loop through all the continents and calculate their fitness, picking the highest one
         for(int cont = 0; cont < numConts; cont++) {
@@ -127,13 +130,24 @@ public class Viking implements LuxAgent
             numCountries = BoardHelper.getContinentSize(cont, countries); // how many countries in cont
             numEnemyArmies = BoardHelper.getEnemyArmiesInContinent(ID, cont, countries); // how many enemy armies in cont
             numBorders = getSmartContinentBorders(cont, countries).length; // how many border countries
+            name = board.getContinentName(cont);
             
-            String name = board.getContinentName(cont);
+            fitness = (bonus * (numCountriesOwned + 1) * (numArmiesOwned + 1)) / ((float) Math.pow(numCountries,2) * (float) Math.pow(numBorders,2) * (numEnemyArmies + 1));
             
-            String message = "name = " + name + "\n bonus = " + bonus + "\n numCountriesOwned = " + numCountriesOwned + "\n numArmiesOwned = " + numArmiesOwned + "\n numCountries = " + numCountries + "\n numEnemyArmies = " + numEnemyArmies + "\n numBorders = " + numBorders + "\n\n";
+            couplet = Float.toString(fitness) + " - " + name + "\n";
+            fitnessList.add(couplet);
+            
+            message = "name = " + name + "\n Fitness = " + fitness + "\n bonus = " + bonus + "\n numCountriesOwned = " + numCountriesOwned + "\n numArmiesOwned = " + numArmiesOwned + "\n numCountries = " + numCountries + "\n numEnemyArmies = " + numEnemyArmies + "\n numBorders = " + numBorders + "\n\n";
             
             board.sendChat(message);
             
+        }
+        
+        Collections.sort(fitnessList);
+        int size = fitnessList.size();
+        for (int i = size - 1; i >= 0; i--) {
+            couplet = fitnessList.get(i);
+            board.sendChat(couplet);
         }
         
         return 0;
