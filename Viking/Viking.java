@@ -72,16 +72,15 @@ public class Viking implements LuxAgent
         int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
         int goalCont = bestContList[0]; // pick the best one from that list (eventually we'll be more sophisticated about this)
         
-        testChat("placeInitialArmies",board.getContinentName(goalCont));
+        testChat("placeInitialArmies","goalCont: " + board.getContinentName(goalCont));
         
         // next we need to pick a country to place our armies on in order to take over the continent
         // the getContTakeoverPath function will simulate taking over the continent
         // from multiple countries and give us back the best path to do so
         // the first country in that path list is the one we want to place our armies on
         int[] goalContCountries = getCountriesInContinent(goalCont, countries); // put all the countries from the goal cont into an integer array to pass to the getAreaTakeoverPath function
-        testChat("placeInitialArmies", Arrays.toString(goalContCountries));
-//        int[] contTakeoverPath = getAreaTakeoverPath(goalContCountries);
-//        int[] temp = getAreaTakeoverPath(goalContCountries, 3);
+        testChat("placeInitialArmies", "countries in goalCont: " + Arrays.toString(goalContCountries));
+        int[] contTakeoverPath = getAreaTakeoverPath(goalContCountries);
         
     }
     
@@ -129,10 +128,10 @@ public class Viking implements LuxAgent
     
     // will return a path of attack from a country (optionally supplied by passing startCountry)
     // to take over as many countries as possible in the given countryList (countryList may be a continent, for example, but doesn't have to be)
-    // if startCountry is not provided, will test multiple starting countries and choose
-    // the best one, including ones that aren't actually in the continent
+    // if startCountry is not provided, will test multiple starting countries in the countryList and choose the best one
+    // if we don't own any countries in the countryList, we'll find one nearby to start on
     protected int[] getAreaTakeoverPath(int[] countryList, int startCountry) {
-        ArrayList paths = new ArrayList();
+        ArrayList paths = new ArrayList(); // we'll store all candidate paths here (individual paths are integer arrays)
         
         if (startCountry != -1) { // a startCountry was supplied, so find all paths starting from that country only
             testChat("getAreaTakeoverPath", "startCountry is " + startCountry);
@@ -144,9 +143,29 @@ public class Viking implements LuxAgent
         }
         else { // no startCountry was supplied, so pick our own candidates
             testChat("getAreaTakeoverPath", "startCountry not given");
+            int[] candidates = getPlayerCountriesInArea(ID, countryList, countries); // get countries in countryList that we own
+
+            // just testing to see if we found the countries we own
+            String message = "";
+            String name;
+            for (int i=0; i < candidates.length; i++) {
+                name = countries[candidates[i]].getName();
+                message = message + name + ", ";
+            }
+            testChat("getAreaTakeoverPath", "countries we own in goalCont: " + message);
             
+            // loop through candidates array, finding paths for each of them
+            // concatenate results from all of them together in the paths ArrayList
+            
+            if (candidates.length == 0) { // we don't own any countries in countryList
+                // find the country outside of countryList that we own with the cheapest path to it
+                // use that as starting country
+            }
         }
         
+        // test all candidate paths and pick the best one
+        
+        // return the best path
         return new int[] {0,0,0,0};
     }
     // overload getAreaTakeoverPath to allow a single parameter version
@@ -245,6 +264,26 @@ public class Viking implements LuxAgent
         int[] intArray = new int[size];
         for(int i=0; i < size; i++) {
             intArray[i] = ((Country)countryArray.get(i)).getCode();
+        }
+        
+        return intArray;
+    }
+    
+    // helper function to return an array of the countries a player owns in a given list of countries (area)
+    protected int[] getPlayerCountriesInArea(int ID, int[] area, Country[] countries) {
+        // loop through all the countries in area; if ID owns them, add them to the results ArrayList
+        List<Integer> results = new ArrayList<Integer>();
+        for (int i=0; i<area.length; i++) {
+            if (countries[area[i]].getOwner() == ID) {
+                results.add(area[i]);
+            }
+        }
+        
+        // Put the country code of each of the countries into an integer array
+        int size = results.size();
+        int[] intArray = new int[size];
+        for(int i=0; i < size; i++) {
+            intArray[i] = results.get(i).intValue();
         }
         
         return intArray;
