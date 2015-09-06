@@ -52,6 +52,11 @@ public class Viking implements LuxAgent
         return "Viking is a bot";
     }
     
+    protected void testChat(String topic, String message) {
+        if (topic == "continentFitness") { board.sendChat(message); }
+        
+    }
+    
     // pick initial countries at the beginning of the game. We will do this later.
     public int pickCountry()
     {
@@ -61,7 +66,13 @@ public class Viking implements LuxAgent
     // place initial armies at the beginning of the game
     public void placeInitialArmies( int numberOfArmies )
     {
-        int bestCont = pickBestContintent();
+        int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
+        int goalCont = bestContList[0]; // eventually we'll be more sophisticated about this
+        
+        int[] ownedInGoalCont = getPlayerCountriesInContinent(ID, goalCont, countries);
+        for (int i = 0; i < ownedInGoalCont.length; i++) {
+           // board.sendChat(ownedInGoalCont[i] + "\n");
+        }
     }
     
     public void cardsPhase( Card[] cards )
@@ -106,9 +117,9 @@ public class Viking implements LuxAgent
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
     
-    // helper function to select the most ideal continent to pursue based on several factors,
+    // helper function to rate continents to pursue based on several factors,
     // such as size, bonus, number of countries we own, etc...
-    protected int pickBestContintent() {
+    protected int[] rateContinents() {
         
         int goalCont = -1; // the continent we will choose
         float bestFitness = 0; // the continent with the best fitness so far
@@ -117,8 +128,10 @@ public class Viking implements LuxAgent
         // declare the factors for each continent from which we'll calculate the fitness
         float bonus, numCountriesOwned, numArmiesOwned, numCountries, numEnemyArmies, numBorders;
         
-        ArrayList<String> fitnessList = new ArrayList<String>();
-        String message, name, couplet;
+        Map fitnessMap = new HashMap(); // key value array to store continent ID along with its fitness
+        int[] results = new int[numConts]; // array of continent ID's, which will later be sorted by fitness
+        String message = "";
+        String name;
         
         // loop through all the continents and calculate their fitness, picking the highest one
         for(int cont = 0; cont < numConts; cont++) {
@@ -132,25 +145,39 @@ public class Viking implements LuxAgent
             numBorders = getSmartContinentBorders(cont, countries).length; // how many border countries
             name = board.getContinentName(cont);
             
+            // calculate fitness
             fitness = (bonus * (numCountriesOwned + 1) * (numArmiesOwned + 1)) / ((float) Math.pow(numCountries,2) * (float) Math.pow(numBorders,2) * (numEnemyArmies + 1));
             
-            couplet = Float.toString(fitness) + " - " + name + "\n";
-            fitnessList.add(couplet);
+            fitnessMap.put(cont,fitness); // store fitness and ID as a key value pair in the map
+            results[cont] = cont; // store continent ID's in this array, will get sorted later
             
-            message = "name = " + name + "\n Fitness = " + fitness + "\n bonus = " + bonus + "\n numCountriesOwned = " + numCountriesOwned + "\n numArmiesOwned = " + numArmiesOwned + "\n numCountries = " + numCountries + "\n numEnemyArmies = " + numEnemyArmies + "\n numBorders = " + numBorders + "\n\n";
-            
-            board.sendChat(message);
-            
+            message = message + "\nname: " + name + " ID: " + cont + " fitness: " + fitnessMap.get(cont);
         }
         
-        Collections.sort(fitnessList);
-        int size = fitnessList.size();
-        for (int i = size - 1; i >= 0; i--) {
-            couplet = fitnessList.get(i);
-            board.sendChat(couplet);
+        testChat("continentFitness",message);
+        
+        // bubble sort the results array by fitness
+        boolean flag = true;
+        int temp;
+        float v1, v2;
+        while(flag) {
+            flag = false;
+            for (int i=0; i<results.length-1; i++) {
+                v1 = (Float)fitnessMap.get(results[i]);
+                v2 = (Float)fitnessMap.get(results[i+1]);
+                if (v1 < v2) {
+                    temp = results[i];
+                    results[i] = results[i+1];
+                    results[i+1] = temp;
+                    flag = true;
+                }
+            }
         }
         
-        return 0;
+        testChat("continentFitness",Arrays.toString(results));
+        
+        int[] temp1 = new int[1];
+        return temp1;
     }
     
     // helper function to return an array of the countries a player owns in a given continent
