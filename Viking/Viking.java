@@ -54,7 +54,9 @@ public class Viking implements LuxAgent
     
     protected void testChat(String topic, String message) {
 //        if (topic == "continentFitness") { board.sendChat(message); }
-        
+        if (topic == "placeInitialArmies") { board.sendChat(message); }
+        if (topic == "getAreaTakeoverPath") { board.sendChat(message); }
+
     }
     
     // pick initial countries at the beginning of the game. We will do this later.
@@ -66,15 +68,21 @@ public class Viking implements LuxAgent
     // place initial armies at the beginning of the game
     public void placeInitialArmies( int numberOfArmies )
     {
+        // first we'll decide what continents to pursue and thus which ones we'll place armies on
         int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
-        int goalCont = bestContList[0]; // eventually we'll be more sophisticated about this
+        int goalCont = bestContList[0]; // pick the best one from that list (eventually we'll be more sophisticated about this)
         
-        board.sendChat(board.getContinentName(goalCont));
+        testChat("placeInitialArmies",board.getContinentName(goalCont));
         
-        int[] ownedInGoalCont = getPlayerCountriesInContinent(ID, goalCont, countries);
-        for (int i = 0; i < ownedInGoalCont.length; i++) {
-            board.sendChat(countries[ownedInGoalCont[i]].getName() + "\n");
-        }
+        // next we need to pick a country to place our armies on in order to take over the continent
+        // the getContTakeoverPath function will simulate taking over the continent
+        // from multiple countries and give us back the best path to do so
+        // the first country in that path list is the one we want to place our armies on
+        int[] goalContCountries = getCountriesInContinent(goalCont, countries); // put all the countries from the goal cont into an integer array to pass to the getAreaTakeoverPath function
+        testChat("placeInitialArmies", Arrays.toString(goalContCountries));
+//        int[] contTakeoverPath = getAreaTakeoverPath(goalContCountries);
+//        int[] temp = getAreaTakeoverPath(goalContCountries, 3);
+        
     }
     
     public void cardsPhase( Card[] cards )
@@ -119,7 +127,45 @@ public class Viking implements LuxAgent
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
     
-    // helper function to rate continents to pursue based on several factors,
+    // will return a path of attack from a country (optionally supplied by passing startCountry)
+    // to take over as many countries as possible in the given countryList (countryList may be a continent, for example, but doesn't have to be)
+    // if startCountry is not provided, will test multiple starting countries and choose
+    // the best one, including ones that aren't actually in the continent
+    protected int[] getAreaTakeoverPath(int[] countryList, int startCountry) {
+        ArrayList paths = new ArrayList();
+        
+        if (startCountry != -1) { // a startCountry was supplied, so find all paths starting from that country only
+            testChat("getAreaTakeoverPath", "startCountry is " + startCountry);
+            // create an new history (integer array) containing only the starting country
+            int[] temp = new int[1];
+            temp[0] = startCountry;
+            // find paths
+            paths = findAreaPaths(temp, countryList);
+        }
+        else { // no startCountry was supplied, so pick our own candidates
+            testChat("getAreaTakeoverPath", "startCountry not given");
+            
+        }
+        
+        return new int[] {0,0,0,0};
+    }
+    // overload getAreaTakeoverPath to allow a single parameter version
+    protected int[] getAreaTakeoverPath(int[] countryList) {
+        return getAreaTakeoverPath(countryList, -1);
+    }
+    
+    // find all possible paths through enemy countries within countryList
+    // starting with the last country in the history array
+    // history is an array of country codes containing the path history already searched
+    // countryList is an array of country codes in which the search takes place
+    // this may typically be a continent, but doesn't have to be
+    // returns an ArrayList of paths (which are integer arrays)
+    // the function is called recursively
+    protected ArrayList findAreaPaths(int[] history, int[] countryList) {
+        return new ArrayList();
+    }
+    
+    // function to rate continents to pursue based on several factors,
     // such as size, bonus, number of countries we own, etc...
     protected int[] rateContinents() {
         
@@ -203,7 +249,28 @@ public class Viking implements LuxAgent
         
         return intArray;
     }
-    
+
+    // helper function to return an array of the countries in a given continent
+    protected int[] getCountriesInContinent(int cont, Country[] countries) {
+        // continent iterator returns all countries in 'cont'
+        CountryIterator theCountries = new ContinentIterator(cont, countries);
+        
+        // Put all the countries into an ArrayList
+        ArrayList countryArray = new ArrayList();
+        while (theCountries.hasNext()) {
+            countryArray.add(theCountries.next());
+        }
+        
+        // Put the country code of each of the countries into an integer array
+        int size = countryArray.size();
+        int[] intArray = new int[size];
+        for(int i=0; i < size; i++) {
+            intArray[i] = ((Country)countryArray.get(i)).getCode();
+        }
+        
+        return intArray;
+    }
+
     // custom get continent borders function
     protected int[] getSmartContinentBorders(int cont, Country[] countries) {
         // eventually this function will pick borders of the continent that may include countries outside of the continent itself such that the number of borders to defend is smaller.
