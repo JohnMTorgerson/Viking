@@ -158,9 +158,11 @@ public class Viking implements LuxAgent
                 
                 // loop through candidates array, finding paths for each of them
                 int[] initialPath = new int[1];
-                initialPath[0] = candidates[0];
-                paths = findAreaPaths(initialPath, countryList);
-                // concatenate results from all of them together in the paths ArrayList
+                for (int i=0; i<candidates.length; i++) {
+                    initialPath[0] = candidates[i];
+                    paths = findAreaPaths(initialPath, countryList);
+                    // concatenate results from all of them together in the paths ArrayList
+                }
             }
             else { // we don't own any countries in countryList
                 testChat("getAreaTakeoverPath", "we don't own any countries in goalCont");
@@ -182,19 +184,81 @@ public class Viking implements LuxAgent
     // find all possible paths through enemy countries within countryList
     // starting with the last country in the history array
     // history is an array of country codes containing the path history already searched
-    // countryList is an array of country codes in which the search takes place
+    // countryList is an array of country codes in which the entire search takes place
     // this may typically be a continent, but doesn't have to be
     // returns an ArrayList of paths (which are integer arrays)
     // the function calls itself recursively
     protected ArrayList findAreaPaths(int[] history, int[] countryList) {
         ArrayList terminalPaths = new ArrayList(); // all possible terminal paths will end up in this array
         int startCountry = history[history.length - 1]; // starting country is the last element in the history
+        int[] newHistory = new int[history.length + 1]; // new history array to add the next country(s) to
+        System.arraycopy(history, 0, newHistory, 0, history.length); // copy the old history into the beginning of new history, leaving one empty spot at the end
         int[] neighbors = countries[startCountry].getAdjoiningCodeList(); // get list of startCountry's neighbors
+        boolean anyValidNeighbors = false; // if we find any valid neighbors, we'll switch this to true
 
         String[] countryNames = getCountryNames(neighbors);
-        testChat("findAreaPaths", "startCountry: " + countries[startCountry].getName() + " - neighbors: " + Arrays.toString(countryNames));
+//        testChat("findAreaPaths", "startCountry: " + countries[startCountry].getName() + " - neighbors: " + Arrays.toString(countryNames));
         
-        return new ArrayList();
+        // loop through all neighbors; if valid, add to history and recurse
+        for (int i=0; i<neighbors.length; i++) {
+            if (pathNeighborIsValid(neighbors[i], history, countryList)) { // if the country is valid
+                anyValidNeighbors = true;
+                newHistory[newHistory.length-1] = neighbors[i]; // add it to the end of the new history
+//                testChat("findAreaPaths",countryNames[i] + " is valid – New history: " + Arrays.toString(getCountryNames(newHistory)));
+                
+                terminalPaths.addAll(findAreaPaths(newHistory, countryList)); // recurse, adding whole chain to the terminalPaths array
+                
+            } else {
+//                testChat("findAreaPaths",countryNames[i] + " is NOT valid");
+            }
+            
+        }
+        
+        // if there were no valid neighbors, we're at the end of the path
+        // the history as given includes the terminal country of the path
+        // so all we have to do is send back the history we were given, wrapped in an arrayList
+        // (we'll add it to terminalPaths, which should be empty in this case)
+        // and as it bubbles up, it will be concatenated with any other terminal paths that were found
+        // in higher function calls
+        if (anyValidNeighbors == false) {
+            terminalPaths.add(history);
+            testChat("findAreaPaths", "Terminal Path: " + Arrays.toString(getCountryNames(history)));
+        }
+        
+        // return the terminalPaths arrayList. if we're at the end of a path, this will contain
+        // a single terminal path. If we're not at the end of a path, it will contain all the terminal
+        // paths below us that were found recursively, which will then be concatenated with any other
+        // terminal paths that were found elsewhere (i.e. the branches that split above us) as they bubble up
+        return terminalPaths;
+    }
+    
+    // called by the findAreaPaths function to determine whether a potential country in a path is valid
+    // i.e. it hasn't been visited already, and it's in the specified list of countries (e.g. a certain continent)
+    protected boolean pathNeighborIsValid(int neighbor, int[] history, int[] countryList) {
+
+        // first check if we own the country
+        if (countries[neighbor].getOwner() == ID) {
+            return false; // if we own it, it's invalid, so return false immediately
+        }
+
+        // next, check if the neighbor has already been visited (i.e. it's in the history)
+        for (int i=0; i<history.length; i++) {
+            if (history[i] == neighbor) {
+                return false; // if in history, it's invalid, so return false immediately
+            }
+        }
+        
+        // check if the neighbor is in the allowed list of countries
+        for (int i=0; i<countryList.length; i++) {
+            if (countryList[i] == neighbor) {
+                return true; // if we've gotten this far, all the other checks have passed, so return true
+            }
+        }
+        
+        // return false by default. We'll get here in one of two cases I can think of:
+        // (1) it's an enemy country that's not in the history but is also not in the countryList, or
+        // (2) it's not a country. Sometimes we'll get passed values that aren't countries, in which case they should be deemed invalid
+        return false;
     }
     
     // function to rate continents to pursue based on several factors,
@@ -257,6 +321,17 @@ public class Viking implements LuxAgent
         testChat("continentFitness",Arrays.toString(results));
         
         return results;
+    }
+    
+    // method to concatenate integer arrays
+    // THIS METHOD HASN'T BEEN TESTED YET!
+    protected int[] arrayConcat(int[] a, int[] b) {
+        int aLength = a.length;
+        int bLength = b.length;
+        int[] c= new int[aLength + bLength];
+        System.arraycopy(a, 0, c, 0, aLength);
+        System.arraycopy(b, 0, c, aLength, bLength);
+        return c;
     }
     
     // takes an integer array of country codes and returns a string array of the associated country names
