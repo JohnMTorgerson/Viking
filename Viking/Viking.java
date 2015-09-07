@@ -56,7 +56,8 @@ public class Viking implements LuxAgent
 //        if (topic == "continentFitness") { board.sendChat(message); }
         if (topic == "placeInitialArmies") { board.sendChat(message); }
         if (topic == "getAreaTakeoverPath") { board.sendChat(message); }
-        if (topic == "findAreaPaths") { board.sendChat(message); }
+//        if (topic == "findAreaPaths") { board.sendChat(message); }
+        if (topic == "pickBestTakeoverPath") { board.sendChat(message); }
 
     }
     
@@ -72,6 +73,7 @@ public class Viking implements LuxAgent
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
         int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
         int goalCont = bestContList[0]; // pick the best one from that list (eventually we'll be more sophisticated about this)
+//        int goalCont = 12; // manually picking a continent for testing purposes
         
         testChat("placeInitialArmies","goalCont: " + board.getContinentName(goalCont));
         
@@ -160,8 +162,7 @@ public class Viking implements LuxAgent
                 int[] initialPath = new int[1];
                 for (int i=0; i<candidates.length; i++) {
                     initialPath[0] = candidates[i];
-                    paths = findAreaPaths(initialPath, countryList);
-                    // concatenate results from all of them together in the paths ArrayList
+                    paths.addAll(findAreaPaths(initialPath, countryList)); // concatenate results from all of them together in the paths ArrayList
                 }
             }
             else { // we don't own any countries in countryList
@@ -171,14 +172,29 @@ public class Viking implements LuxAgent
             }
         }
         
-        // test all candidate paths and pick the best one
+        testChat("getAreaTakeoverPath", "There are " + paths.size() + " terminal paths");
         
-        // return the best path
-        return new int[] {0,0,0,0};
+        // choose and return the best path
+        return pickBestTakeoverPath(paths);
     }
     // overload getAreaTakeoverPath to allow a single parameter version
     protected int[] getAreaTakeoverPath(int[] countryList) {
         return getAreaTakeoverPath(countryList, -1);
+    }
+    
+    protected int[] pickBestTakeoverPath(ArrayList<int[]> allPaths) {
+        
+        // sort list of all paths by the length of each path in descending order
+//        Collections.sort(allPaths, new intArrayLengthComp()); // this method wasn't working
+//        testChat("pickBestTakeoverPath", "sorted paths number: " + allPaths.size());
+        
+        // display the whole list for testing purposes:
+        for (int i=0; i<allPaths.size(); i++) {
+            String[] countryNames = getCountryNames(allPaths.get(i));
+            testChat("pickBestTakeoverPath", Arrays.toString(countryNames));
+        }
+        
+        return new int[] {0,0,0,0};
     }
     
     // find all possible paths through enemy countries within countryList
@@ -233,7 +249,7 @@ public class Viking implements LuxAgent
     }
     
     // called by the findAreaPaths function to determine whether a potential country in a path is valid
-    // i.e. it hasn't been visited already, and it's in the specified list of countries (e.g. a certain continent)
+    // i.e. we don't own it, it hasn't been visited already, and it's in the specified list of countries (e.g. a certain continent)
     protected boolean pathNeighborIsValid(int neighbor, int[] history, int[] countryList) {
 
         // first check if we own the country
@@ -242,7 +258,9 @@ public class Viking implements LuxAgent
         }
 
         // next, check if the neighbor has already been visited (i.e. it's in the history)
-        for (int i=0; i<history.length; i++) {
+        // it's probably faster to iterate backwards from the end of the array, since a neighbor
+        // we've already visited is more likely to be near the end of the array
+        for (int i=history.length-1; i>=0; i--) {
             if (history[i] == neighbor) {
                 return false; // if in history, it's invalid, so return false immediately
             }
@@ -256,7 +274,7 @@ public class Viking implements LuxAgent
         }
         
         // return false by default. We'll get here in one of two cases I can think of:
-        // (1) it's an enemy country that's not in the history but is also not in the countryList, or
+        // (1) it's an enemy country that's not in the history and is also not in the countryList, or
         // (2) it's not a country. Sometimes we'll get passed values that aren't countries, in which case they should be deemed invalid
         return false;
     }
@@ -290,7 +308,8 @@ public class Viking implements LuxAgent
             name = board.getContinentName(cont);
             
             // calculate fitness
-            fitness = (bonus * (numCountriesOwned + 1) * (numArmiesOwned + 1)) / ((float) Math.pow(numCountries,1.3) * (float) Math.pow(numBorders,2) * (numEnemyArmies + 1));
+//            fitness = (bonus * (numCountriesOwned + 1) * (numArmiesOwned + 1)) / ((float) Math.pow(numCountries,1.3) * (float) Math.pow(numBorders,2) * (numEnemyArmies + 1));
+            fitness = numCountries; // pick biggest continent for testing purposes
             
             fitnessMap.put(cont,fitness); // store fitness and ID as a key value pair in the map
             results[cont] = cont; // store continent ID's in this array, will get sorted later
@@ -333,6 +352,20 @@ public class Viking implements LuxAgent
         System.arraycopy(b, 0, c, aLength, bLength);
         return c;
     }
+    
+    // a custom comparator class to compare integer arrays by length
+    // NOT WORKING AT THE MOMENT
+/*    class intArrayLengthComp implements Comparator<int[]> {
+        public int compare(int[] a, int[] b) {
+            if (a.length > b.length) {
+                return 1;
+            } else if (a.length < b.length) {
+                return -1;
+            } else {
+                return 0;
+            }
+        }
+    }*/
     
     // takes an integer array of country codes and returns a string array of the associated country names
     // primarily useful for testing purposes
