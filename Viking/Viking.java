@@ -56,8 +56,8 @@ public class Viking implements LuxAgent
 //        if (topic == "continentFitness") { board.sendChat(message); }
         if (topic == "placeInitialArmies") { board.sendChat(message); }
         if (topic == "getAreaTakeoverPath") { board.sendChat(message); }
-//        if (topic == "findAreaPaths") { board.sendChat(message); }
-        if (topic == "pickBestTakeoverPath") { board.sendChat(message); }
+        if (topic == "findAreaPaths") { board.sendChat(message); }
+//        if (topic == "pickBestTakeoverPath") { board.sendChat(message); }
 
     }
     
@@ -190,8 +190,8 @@ public class Viking implements LuxAgent
         
         // display the whole list for testing purposes:
         for (int i=0; i<allPaths.size(); i++) {
-            String[] countryNames = getCountryNames(allPaths.get(i));
-            testChat("pickBestTakeoverPath", Arrays.toString(countryNames));
+    //        String[] countryNames = getCountryNames(allPaths.get(i));
+            testChat("pickBestTakeoverPath", Arrays.toString(allPaths.get(i)));
         }
         
         return new int[] {0,0,0,0};
@@ -205,13 +205,14 @@ public class Viking implements LuxAgent
     // returns an ArrayList of paths (which are integer arrays)
     // the function calls itself recursively
     protected ArrayList findAreaPaths(int[] history, int[] countryList) {
-        ArrayList terminalPaths = new ArrayList(); // all possible terminal paths will end up in this array
+        ArrayList<int[]> terminalPaths = new ArrayList<int[]>(); // all possible terminal paths will end up in this array
         int startCountry = history[history.length - 1]; // starting country is the last element in the history
         int[] newHistory = new int[history.length + 1]; // new history array to add the next country(s) to
         System.arraycopy(history, 0, newHistory, 0, history.length); // copy the old history into the beginning of new history, leaving one empty spot at the end
         int[] neighbors = countries[startCountry].getAdjoiningCodeList(); // get list of startCountry's neighbors
         boolean anyValidNeighbors = false; // if we find any valid neighbors, we'll switch this to true
-
+        ArrayList<int[]> tempPaths = new ArrayList<int[]>();
+        
         String[] countryNames = getCountryNames(neighbors);
 //        testChat("findAreaPaths", "startCountry: " + countries[startCountry].getName() + " - neighbors: " + Arrays.toString(countryNames));
         
@@ -222,7 +223,11 @@ public class Viking implements LuxAgent
                 newHistory[newHistory.length-1] = neighbors[i]; // add it to the end of the new history
 //                testChat("findAreaPaths",countryNames[i] + " is valid – New history: " + Arrays.toString(getCountryNames(newHistory)));
                 
-                terminalPaths.addAll(findAreaPaths(newHistory, countryList)); // recurse, adding whole chain to the terminalPaths array
+//                terminalPaths.addAll(findAreaPaths(newHistory, countryList)); // recurse, adding whole chain to the terminalPaths array
+                tempPaths = findAreaPaths(newHistory, countryList);
+                for (int j=0; j<tempPaths.size(); j++) {
+                    terminalPaths.add(tempPaths.get(j));
+                }
                 
             } else {
 //                testChat("findAreaPaths",countryNames[i] + " is NOT valid");
@@ -238,13 +243,18 @@ public class Viking implements LuxAgent
         // in higher function calls
         if (anyValidNeighbors == false) {
             terminalPaths.add(history);
-            testChat("findAreaPaths", "Terminal Path: " + Arrays.toString(getCountryNames(history)));
+        //    testChat("findAreaPaths", "Terminal Path: " + Arrays.toString(getCountryNames(history)));
         }
         
         // return the terminalPaths arrayList. if we're at the end of a path, this will contain
         // a single terminal path. If we're not at the end of a path, it will contain all the terminal
         // paths below us that were found recursively, which will then be concatenated with any other
         // terminal paths that were found elsewhere (i.e. the branches that split above us) as they bubble up
+        for (int i=0; i<terminalPaths.size(); i++) {
+            //        String[] countryNames = getCountryNames(terminalPaths.get(i));
+            testChat("findAreaPaths", "s" + Arrays.toString(terminalPaths.get(i)));
+        }
+        testChat("findAreaPaths", "----- RETURN! -----");
         return terminalPaths;
     }
     
