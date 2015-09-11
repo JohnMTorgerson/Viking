@@ -221,7 +221,7 @@ public class Viking implements LuxAgent
             if (pathNeighborIsValid(neighbors[i], history, countryList)) { // if the country is valid
                 anyValidNeighbors = true;
                 newHistory[newHistory.length-1] = neighbors[i]; // add it to the end of the new history
-//                testChat("findAreaPaths",countryNames[i] + " is valid – New history: " + Arrays.toString(getCountryNames(newHistory)));
+//                testChat("findAreaPaths",neighbors[i] + " is valid -- New history: " + Arrays.toString(newHistory));
                 
 //                terminalPaths.addAll(findAreaPaths(newHistory, countryList)); // recurse, adding whole chain to the terminalPaths array
                 tempPaths = findAreaPaths(newHistory, countryList);
@@ -242,6 +242,9 @@ public class Viking implements LuxAgent
         // and as it bubbles up, it will be concatenated with any other terminal paths that were found
         // in higher function calls
         if (anyValidNeighbors == false) {
+            
+            history[0] = rand.nextInt(1000); // testing
+            
             terminalPaths.add(history);
         //    testChat("findAreaPaths", "Terminal Path: " + Arrays.toString(getCountryNames(history)));
         }
