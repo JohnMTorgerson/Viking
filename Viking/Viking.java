@@ -209,6 +209,7 @@ public class Viking implements LuxAgent
         int startCountry = history[history.length - 1]; // starting country is the last element in the history
         int[] newHistory = new int[history.length + 1]; // new history array to add the next country(s) to
         System.arraycopy(history, 0, newHistory, 0, history.length); // copy the old history into the beginning of new history, leaving one empty spot at the end
+        
         int[] neighbors = countries[startCountry].getAdjoiningCodeList(); // get list of startCountry's neighbors
         boolean anyValidNeighbors = false; // if we find any valid neighbors, we'll switch this to true
         ArrayList<int[]> tempPaths = new ArrayList<int[]>();
@@ -219,14 +220,26 @@ public class Viking implements LuxAgent
         // loop through all neighbors; if valid, add to history and recurse
         for (int i=0; i<neighbors.length; i++) {
             if (pathNeighborIsValid(neighbors[i], history, countryList)) { // if the country is valid
+                testChat("findAreaPaths", "These are the paths in ***terminalPaths:***");
+                for (int j=0; j<terminalPaths.size(); j++) {
+                    testChat("findAreaPaths", Arrays.toString(terminalPaths.get(j)));
+                }
                 anyValidNeighbors = true;
                 newHistory[newHistory.length-1] = neighbors[i]; // add it to the end of the new history
 //                testChat("findAreaPaths",neighbors[i] + " is valid -- New history: " + Arrays.toString(newHistory));
                 
 //                terminalPaths.addAll(findAreaPaths(newHistory, countryList)); // recurse, adding whole chain to the terminalPaths array
                 tempPaths = findAreaPaths(newHistory, countryList);
+                testChat("findAreaPaths", "These are the paths in ~~~tempPaths:~~~");
+                for (int j=0; j<tempPaths.size(); j++) {
+                    testChat("findAreaPaths", Arrays.toString(tempPaths.get(j)));
+                }
                 for (int j=0; j<tempPaths.size(); j++) {
                     terminalPaths.add(tempPaths.get(j));
+                }
+                testChat("findAreaPaths", "Here they are concatenated -------:");
+                for (int j=0; j<terminalPaths.size(); j++) {
+                    testChat("findAreaPaths", Arrays.toString(terminalPaths.get(j)));
                 }
                 
             } else {
@@ -243,7 +256,7 @@ public class Viking implements LuxAgent
         // in higher function calls
         if (anyValidNeighbors == false) {
             
-            history[0] = rand.nextInt(1000); // testing
+            history[0] = rand.nextInt(899) + 100; // testing
             
             terminalPaths.add(history);
         //    testChat("findAreaPaths", "Terminal Path: " + Arrays.toString(getCountryNames(history)));
@@ -255,9 +268,9 @@ public class Viking implements LuxAgent
         // terminal paths that were found elsewhere (i.e. the branches that split above us) as they bubble up
         for (int i=0; i<terminalPaths.size(); i++) {
             //        String[] countryNames = getCountryNames(terminalPaths.get(i));
-            testChat("findAreaPaths", "s" + Arrays.toString(terminalPaths.get(i)));
+            //testChat("findAreaPaths", "s" + Arrays.toString(terminalPaths.get(i)));
         }
-        testChat("findAreaPaths", "----- RETURN! -----");
+        //testChat("findAreaPaths", "----- RETURN! -----");
         return terminalPaths;
     }
     
