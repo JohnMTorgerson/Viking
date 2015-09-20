@@ -258,7 +258,11 @@ public class Viking implements LuxAgent
             
             history[0] = rand.nextInt(899) + 100; // testing
             
-            terminalPaths.add(history);
+            // make a copy of history to add to terminalPaths to avoid reference/scope problem
+            int[] historyCopy = new int[history.length];
+            System.arraycopy(history, 0, historyCopy, 0, history.length);
+            
+            terminalPaths.add(historyCopy);
         //    testChat("findAreaPaths", "Terminal Path: " + Arrays.toString(getCountryNames(history)));
         }
         
@@ -301,7 +305,7 @@ public class Viking implements LuxAgent
         
         // return false by default. We'll get here in one of two cases I can think of:
         // (1) it's an enemy country that's not in the history and is also not in the countryList, or
-        // (2) it's not a country. Sometimes we'll get passed values that aren't countries, in which case they should be deemed invalid
+        // (2) it's not a country. Sometimes we might get passed values that aren't countries, in which case they should be deemed invalid
         return false;
     }
     
