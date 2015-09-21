@@ -56,8 +56,8 @@ public class Viking implements LuxAgent
 //        if (topic == "continentFitness") { board.sendChat(message); }
         if (topic == "placeInitialArmies") { board.sendChat(message); }
         if (topic == "getAreaTakeoverPath") { board.sendChat(message); }
-        if (topic == "findAreaPaths") { board.sendChat(message); }
-//        if (topic == "pickBestTakeoverPath") { board.sendChat(message); }
+//        if (topic == "findAreaPaths") { board.sendChat(message); }
+        if (topic == "pickBestTakeoverPath") { board.sendChat(message); }
 
     }
     
@@ -73,7 +73,6 @@ public class Viking implements LuxAgent
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
         int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
         int goalCont = bestContList[0]; // pick the best one from that list (eventually we'll be more sophisticated about this)
-//        int goalCont = 12; // manually picking a continent for testing purposes
         
         testChat("placeInitialArmies","goalCont: " + board.getContinentName(goalCont));
         
@@ -168,7 +167,13 @@ public class Viking implements LuxAgent
             else { // we don't own any countries in countryList
                 testChat("getAreaTakeoverPath", "we don't own any countries in goalCont");
                 // find the country outside of countryList that we own with the cheapest path to it
+                int[] initialPath = getCheapestRouteToArea(countryList);
+                
+                String[] countryNames = getCountryNames(initialPath);
+                testChat("getAreaTakeoverPath", "Path to continent: " + Arrays.toString(countryNames));
+                
                 // use that as starting country
+                paths = findAreaPaths(initialPath, countryList);
             }
         }
         
@@ -182,6 +187,24 @@ public class Viking implements LuxAgent
         return getAreaTakeoverPath(countryList, -1);
     }
     
+    // find the nearest country owned by ID and return the cheapest path
+    // from it to a country in the given area (area could be a continent, for example)
+    protected int[] getCheapestRouteToArea(int[] area, int ID) {
+        // eventually this will be a custom written function to find the cheapest path to the given area
+        // for the moment, however, we'll just assume that the area is the continent that contains the first country in the area array
+        // this definitely will need to get changed at some point
+
+        int continent = countries[area[0]].getContinent();
+        int[] path = BoardHelper.cheapestRouteFromOwnerToCont(ID, continent, countries);
+
+        return path;
+    }
+    // overload getCheapestRouteToArea to allow a single parameter version
+    // if no ID is provided, assume it should be the owner
+    protected int[] getCheapestRouteToArea(int[] area) {
+        return getCheapestRouteToArea(area, ID);
+    }
+    
     protected int[] pickBestTakeoverPath(ArrayList<int[]> allPaths) {
         
         // sort list of all paths by the length of each path in descending order
@@ -190,8 +213,8 @@ public class Viking implements LuxAgent
         
         // display the whole list for testing purposes:
         for (int i=0; i<allPaths.size(); i++) {
-    //        String[] countryNames = getCountryNames(allPaths.get(i));
-            testChat("pickBestTakeoverPath", Arrays.toString(allPaths.get(i)));
+            String[] countryNames = getCountryNames(allPaths.get(i));
+            testChat("pickBestTakeoverPath", Arrays.toString(countryNames));
         }
         
         return new int[] {0,0,0,0};
@@ -209,43 +232,16 @@ public class Viking implements LuxAgent
         int startCountry = history[history.length - 1]; // starting country is the last element in the history
         int[] newHistory = new int[history.length + 1]; // new history array to add the next country(s) to
         System.arraycopy(history, 0, newHistory, 0, history.length); // copy the old history into the beginning of new history, leaving one empty spot at the end
-        
         int[] neighbors = countries[startCountry].getAdjoiningCodeList(); // get list of startCountry's neighbors
         boolean anyValidNeighbors = false; // if we find any valid neighbors, we'll switch this to true
-        ArrayList<int[]> tempPaths = new ArrayList<int[]>();
-        
-        String[] countryNames = getCountryNames(neighbors);
-//        testChat("findAreaPaths", "startCountry: " + countries[startCountry].getName() + " - neighbors: " + Arrays.toString(countryNames));
-        
+
         // loop through all neighbors; if valid, add to history and recurse
         for (int i=0; i<neighbors.length; i++) {
             if (pathNeighborIsValid(neighbors[i], history, countryList)) { // if the country is valid
-                testChat("findAreaPaths", "These are the paths in ***terminalPaths:***");
-                for (int j=0; j<terminalPaths.size(); j++) {
-                    testChat("findAreaPaths", Arrays.toString(terminalPaths.get(j)));
-                }
                 anyValidNeighbors = true;
                 newHistory[newHistory.length-1] = neighbors[i]; // add it to the end of the new history
-//                testChat("findAreaPaths",neighbors[i] + " is valid -- New history: " + Arrays.toString(newHistory));
-                
-//                terminalPaths.addAll(findAreaPaths(newHistory, countryList)); // recurse, adding whole chain to the terminalPaths array
-                tempPaths = findAreaPaths(newHistory, countryList);
-                testChat("findAreaPaths", "These are the paths in ~~~tempPaths:~~~");
-                for (int j=0; j<tempPaths.size(); j++) {
-                    testChat("findAreaPaths", Arrays.toString(tempPaths.get(j)));
-                }
-                for (int j=0; j<tempPaths.size(); j++) {
-                    terminalPaths.add(tempPaths.get(j));
-                }
-                testChat("findAreaPaths", "Here they are concatenated -------:");
-                for (int j=0; j<terminalPaths.size(); j++) {
-                    testChat("findAreaPaths", Arrays.toString(terminalPaths.get(j)));
-                }
-                
-            } else {
-//                testChat("findAreaPaths",countryNames[i] + " is NOT valid");
+                terminalPaths.addAll(findAreaPaths(newHistory, countryList)); // recurse, adding whole chain to the terminalPaths array
             }
-            
         }
         
         // if there were no valid neighbors, we're at the end of the path
@@ -255,26 +251,22 @@ public class Viking implements LuxAgent
         // and as it bubbles up, it will be concatenated with any other terminal paths that were found
         // in higher function calls
         if (anyValidNeighbors == false) {
-            
-            history[0] = rand.nextInt(899) + 100; // testing
-            
             // make a copy of history to add to terminalPaths to avoid reference/scope problem
             int[] historyCopy = new int[history.length];
             System.arraycopy(history, 0, historyCopy, 0, history.length);
             
             terminalPaths.add(historyCopy);
-        //    testChat("findAreaPaths", "Terminal Path: " + Arrays.toString(getCountryNames(history)));
         }
         
         // return the terminalPaths arrayList. if we're at the end of a path, this will contain
         // a single terminal path. If we're not at the end of a path, it will contain all the terminal
         // paths below us that were found recursively, which will then be concatenated with any other
         // terminal paths that were found elsewhere (i.e. the branches that split above us) as they bubble up
-        for (int i=0; i<terminalPaths.size(); i++) {
-            //        String[] countryNames = getCountryNames(terminalPaths.get(i));
-            //testChat("findAreaPaths", "s" + Arrays.toString(terminalPaths.get(i)));
-        }
-        //testChat("findAreaPaths", "----- RETURN! -----");
+//        for (int i=0; i<terminalPaths.size(); i++) {
+//            String[] countryNames = getCountryNames(terminalPaths.get(i));
+//            testChat("findAreaPaths", "s" + Arrays.toString(countryNames));
+//        }
+//        testChat("findAreaPaths", "----- RETURN! -----");
         return terminalPaths;
     }
     
@@ -338,8 +330,8 @@ public class Viking implements LuxAgent
             name = board.getContinentName(cont);
             
             // calculate fitness
-//            fitness = (bonus * (numCountriesOwned + 1) * (numArmiesOwned + 1)) / ((float) Math.pow(numCountries,1.3) * (float) Math.pow(numBorders,2) * (numEnemyArmies + 1));
-            fitness = numCountries; // pick biggest continent for testing purposes
+            fitness = (bonus * (numCountriesOwned + 1) * (numArmiesOwned + 1)) / ((float) Math.pow(numCountries,1.3) * (float) Math.pow(numBorders,2) * (numEnemyArmies + 1));
+//            fitness = numCountries; // pick biggest continent for testing purposes
             
             fitnessMap.put(cont,fitness); // store fitness and ID as a key value pair in the map
             results[cont] = cont; // store continent ID's in this array, will get sorted later
@@ -409,6 +401,7 @@ public class Viking implements LuxAgent
     }
     
     // helper function to return an array of the countries a player owns in a given continent
+    // ID is the player ID to check; cont is the continent in question; countries is the global list of all countries on the board
     protected int[] getPlayerCountriesInContinent(int ID, int cont, Country[] countries) {
         // continent iterator returns all countries in 'cont',
         // player iterator returns all countries out of those owned by 'ID'
@@ -432,6 +425,7 @@ public class Viking implements LuxAgent
     }
     
     // helper function to return an array of the countries a player owns in a given list of countries (area)
+    // ID is the player ID to check; area is the list of countries to search in; countries is the global list of all countries on the board
     protected int[] getPlayerCountriesInArea(int ID, int[] area, Country[] countries) {
         // loop through all the countries in area; if ID owns them, add them to the results ArrayList
         List<Integer> results = new ArrayList<Integer>();
