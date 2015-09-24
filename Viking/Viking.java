@@ -53,11 +53,13 @@ public class Viking implements LuxAgent
     }
     
     protected void testChat(String topic, String message) {
-//        if (topic == "continentFitness") { board.sendChat(message); }
         if (topic == "placeInitialArmies") { board.sendChat(message); }
+        if (topic == "placeArmies") { board.sendChat(message); }
+        
+//        if (topic == "continentFitness") { board.sendChat(message); }
         if (topic == "getAreaTakeoverPaths") { board.sendChat(message); }
 //        if (topic == "findAreaPaths") { board.sendChat(message); }
-        if (topic == "pickBestTakeoverPath") { board.sendChat(message); }
+//        if (topic == "pickBestTakeoverPaths") { board.sendChat(message); }
 
     }
     
@@ -68,8 +70,9 @@ public class Viking implements LuxAgent
     }
     
     // place initial armies at the beginning of the game
-    public void placeInitialArmies( int numberOfArmies )
-    {
+    public void placeInitialArmies( int numberOfArmies ) {
+        testChat("placeInitialArmies", "*********** PLACE INITIAL ARMIES ***********");
+        
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
         int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
         int goalCont = bestContList[0]; // pick the best one from that list (eventually we'll be more sophisticated about this)
@@ -91,16 +94,21 @@ public class Viking implements LuxAgent
         
     }
     
-    public void cardsPhase( Card[] cards )
-    {
+    public void cardsPhase( Card[] cards ) {
     }
     
-    public void placeArmies( int numberOfArmies )
-    {
+    // place armies at the beginning of each turn
+    public void placeArmies( int numberOfArmies ) {
+        testChat("placeArmies", "*********** PLACE ARMIES ***********");
+        
+        // for now, all we're going to do is dump all our armies on one country
+        // to try to take over a single continent. basically, exactly as we did in placeInitialArmies()
+        // so we're actually just going to call placeInitialArmies() for now
+        placeInitialArmies(numberOfArmies);
     }
     
-    public void attackPhase()
-    {
+    public void attackPhase() {
+        
     }
     
     public int moveArmiesIn( int cca, int ccd)
@@ -238,7 +246,7 @@ public class Viking implements LuxAgent
         // display the whole list for testing purposes:
 //        for (int i=0; i<allPaths.size(); i++) {
 //            String[] countryNames = getCountryNames(allPaths.get(i));
-//            testChat("pickBestTakeoverPath", Arrays.toString(allPaths.get(i)));
+//            testChat("pickBestTakeoverPaths", Arrays.toString(allPaths.get(i)));
 //        }
         
         // pick a path that ends in a border, if possible
@@ -246,13 +254,13 @@ public class Viking implements LuxAgent
         size = longestPaths.size();
         int pathLength;
         boolean isBorder;
-        testChat("pickBestTakeoverPath", "--- Longest paths: ---");
+        testChat("pickBestTakeoverPaths", "--- Longest paths: ---");
         for (int i=0; i<size; i++) {
             pathLength = longestPaths.get(i).length;
             isBorder = isAreaBorder(longestPaths.get(i)[pathLength-1],area);
             
             String[] countryNames = getCountryNames(longestPaths.get(i));
-            testChat("pickBestTakeoverPath", Arrays.toString(countryNames) + " border? " + isBorder);
+            testChat("pickBestTakeoverPaths", Arrays.toString(countryNames) + " border? " + isBorder);
             
             // for now, we'll just return the first one we find that ends in a border
             if (isBorder) {
@@ -266,23 +274,25 @@ public class Viking implements LuxAgent
         return results;
     }
     
-    //Checks to see if country is an area border by comparing its neighbors with a
-    //list of countries in the area.
+    // checks to see if country is a border of area by seeing if any of its
+    // neighbors is outside of area
     boolean isAreaBorder (int country, int[] area) {
-        int[] neighbors = countries[country].getAdjoiningCodeList();
-        boolean match = false;
-        for (int i=0; i<neighbors.length; i++) {
-            match = false;
-            for (int j=0; j<area.length; j++) {
-                if (neighbors[i] == area[j]) {
-                    match = true;
+        int[] neighbors = countries[country].getAdjoiningCodeList(); // get neighbors
+        boolean inArea = false;
+        
+        for (int i=0; i<neighbors.length; i++) { // loop through all the country's neighbors
+            inArea = false;
+            for (int j=0; j<area.length; j++) { // loop through every country in area
+                if (neighbors[i] == area[j]) { // if we found this neighbor in the area
+                    inArea = true;
+                    break;
                 }
             }
-            if (!match) {
-                return true;
+            if (!inArea) { // if inArea is false, then this neighbor is not in the area
+                return true; // which means country is a border, so return true
             }
         }
-        return false;
+        return false; // if we got here, all of the neighbors were in area, so country is not a border; return false
     }
     
     // find all possible paths through enemy countries within countryList
@@ -314,7 +324,7 @@ public class Viking implements LuxAgent
         // so all we have to do is send back the history we were given, wrapped in an arrayList
         // (we'll add it to terminalPaths, which should be empty in this case)
         // and as it bubbles up, it will be concatenated with any other terminal paths that were found
-        // in higher function calls
+        // in other branches
         if (anyValidNeighbors == false) {
             // make a copy of history to add to terminalPaths to avoid reference/scope problem
             int[] historyCopy = new int[history.length];
@@ -362,7 +372,7 @@ public class Viking implements LuxAgent
         
         // return false by default. We'll get here in one of two cases I can think of:
         // (1) it's an enemy country that's not in the history and is also not in the countryList, or
-        // (2) it's not a country. Sometimes we might get passed values that aren't countries, in which case they should be deemed invalid
+        // (2) it's not a country. In case we get passed values that aren't countries, they should be deemed invalid
         return false;
     }
     
