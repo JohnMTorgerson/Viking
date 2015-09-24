@@ -179,8 +179,8 @@ public class Viking implements LuxAgent
         
         testChat("getAreaTakeoverPath", "There are " + paths.size() + " terminal paths");
         
-        // choose and return the best path
-        return pickBestTakeoverPath(paths);
+        // choose and return the best paths
+        return pickBestTakeoverPaths(paths, countryList);
     }
     // overload getAreaTakeoverPath to allow a single parameter version
     protected int[] getAreaTakeoverPath(int[] countryList) {
@@ -205,19 +205,70 @@ public class Viking implements LuxAgent
         return getCheapestRouteToArea(area, ID);
     }
     
-    protected int[] pickBestTakeoverPath(ArrayList<int[]> allPaths) {
+    // given a list of all possible takeover paths (allPaths) through a given country list (area)
+    // this function should find a comprehensive set of paths that pass through every enemy country in the area
+    // ideally, it will find as few as possible that contain every enemy country
+    // so far, however, all we're doing is picking one path. eventually, we'll add code to find the rest of them
+    protected int[] pickBestTakeoverPaths(ArrayList<int[]> allPaths, int[] area) {
         
-        // sort list of all paths by the length of each path in descending order
-//        Collections.sort(allPaths, new intArrayLengthComp()); // this method wasn't working
-//        testChat("pickBestTakeoverPath", "sorted paths number: " + allPaths.size());
+        // find the length of the longest path
+        int maxPathLength = 0;
+        int size = allPaths.size();
+        for (int i=0; i<size; i++) {
+            if (allPaths.get(i).length > maxPathLength) {
+                maxPathLength = allPaths.get(i).length;
+            }
+        }
+        
+        // populate a new arraylist with all the longest paths
+        ArrayList<int[]> longestPaths = new ArrayList<int[]>();
+        for (int i=0; i<size; i++) {
+            if (allPaths.get(i).length == maxPathLength) {
+                longestPaths.add(allPaths.get(i));
+            }
+        }
         
         // display the whole list for testing purposes:
         for (int i=0; i<allPaths.size(); i++) {
             String[] countryNames = getCountryNames(allPaths.get(i));
-            testChat("pickBestTakeoverPath", Arrays.toString(countryNames));
+            testChat("pickBestTakeoverPath", Arrays.toString(allPaths.get(i)));
+        }
+        
+        // pick a path that ends in a border, if possible
+        // eventually we'll be more sophisticated about this, but for now, this will do
+        size = longestPaths.size();
+        int pathLength;
+        boolean isBorder;
+        testChat("pickBestTakeoverPath", "--- Longest paths: ---");
+        for (int i=0; i<size; i++) {
+            pathLength = longestPaths.get(i).length;
+            isBorder = isAreaBorder(longestPaths.get(i)[pathLength-1],area);
+            
+            String[] countryNames = getCountryNames(longestPaths.get(i));
+            testChat("pickBestTakeoverPath", Arrays.toString(countryNames) + " border? " + isBorder);
+            
         }
         
         return new int[] {0,0,0,0};
+    }
+    
+    //Checks to see if country is an area border by comparing its neighbors with a
+    //list of countries in the area.
+    boolean isAreaBorder (int country, int[] area) {
+        int[] neighbors = countries[country].getAdjoiningCodeList();
+        boolean match = false;
+        for (int i=0; i<neighbors.length; i++) {
+            match = false;
+            for (int j=0; j<area.length; j++) {
+                if (neighbors[i] == area[j]) {
+                    match = true;
+                }
+            }
+            if (!match) {
+                return true;
+            }
+        }
+        return false;
     }
     
     // find all possible paths through enemy countries within countryList
@@ -330,8 +381,8 @@ public class Viking implements LuxAgent
             name = board.getContinentName(cont);
             
             // calculate fitness
-            fitness = (bonus * (numCountriesOwned + 1) * (numArmiesOwned + 1)) / ((float) Math.pow(numCountries,1.3) * (float) Math.pow(numBorders,2) * (numEnemyArmies + 1));
-//            fitness = numCountries; // pick biggest continent for testing purposes
+//            fitness = (bonus * (numCountriesOwned + 1) * (numArmiesOwned + 1)) / ((float) Math.pow(numCountries,1.3) * (float) Math.pow(numBorders,2) * (numEnemyArmies + 1));
+            fitness = numCountries; // pick biggest continent for testing purposes
             
             fitnessMap.put(cont,fitness); // store fitness and ID as a key value pair in the map
             results[cont] = cont; // store continent ID's in this array, will get sorted later
