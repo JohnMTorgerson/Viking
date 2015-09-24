@@ -55,7 +55,7 @@ public class Viking implements LuxAgent
     protected void testChat(String topic, String message) {
 //        if (topic == "continentFitness") { board.sendChat(message); }
         if (topic == "placeInitialArmies") { board.sendChat(message); }
-        if (topic == "getAreaTakeoverPath") { board.sendChat(message); }
+        if (topic == "getAreaTakeoverPaths") { board.sendChat(message); }
 //        if (topic == "findAreaPaths") { board.sendChat(message); }
         if (topic == "pickBestTakeoverPath") { board.sendChat(message); }
 
@@ -80,8 +80,14 @@ public class Viking implements LuxAgent
         // the getContTakeoverPath function will simulate taking over the continent
         // from multiple countries and give us back the best path to do so
         // the first country in that path list is the one we want to place our armies on
-        int[] goalContCountries = getCountriesInContinent(goalCont, countries); // put all the countries from the goal cont into an integer array to pass to the getAreaTakeoverPath function
-        int[] contTakeoverPath = getAreaTakeoverPath(goalContCountries); // get the best path to take over the goalCont
+        int[] goalContCountries = getCountriesInContinent(goalCont, countries); // put all the countries from the goal cont into an integer array to pass to the getAreaTakeoverPaths function
+        ArrayList<int[]> contTakeoverPaths = getAreaTakeoverPaths(goalContCountries); // get the best path to take over the goalCont
+        
+        String[] countryNames = getCountryNames(contTakeoverPaths.get(0));
+        testChat("placeInitialArmies", "Path we picked: " + Arrays.toString(countryNames));
+        
+        // for now, just place all of our armies on the starting country of the path we picked
+        board.placeArmies(numberOfArmies, contTakeoverPaths.get(0)[0]);
         
     }
     
@@ -131,11 +137,11 @@ public class Viking implements LuxAgent
     // to take over as many countries as possible in the given countryList (countryList may be a continent, for example, but doesn't have to be)
     // if startCountry is not provided, will test all the starting countries we own in the countryList and choose the best one
     // if we don't own any countries in the countryList, we'll find one nearby to start on
-    protected int[] getAreaTakeoverPath(int[] countryList, int startCountry) {
-        ArrayList paths = new ArrayList(); // we'll store all candidate paths here (individual paths are integer arrays)
+    protected ArrayList getAreaTakeoverPaths(int[] countryList, int startCountry) {
+        ArrayList<int[]> paths = new ArrayList<int[]>(); // we'll store all candidate paths here (individual paths are integer arrays)
         
         if (startCountry != -1) { // a startCountry was supplied, so find all paths starting from that country only
-            testChat("getAreaTakeoverPath", "startCountry is " + startCountry);
+            testChat("getAreaTakeoverPaths", "startCountry is " + startCountry);
             
             // create an new history (integer array) containing only the starting country
             int[] initialPath = new int[1];
@@ -147,7 +153,7 @@ public class Viking implements LuxAgent
         else { // no startCountry was supplied, so pick our own candidates
             // we'll test every path from every country we own in the countryList
             // if we don't own any countries in countryList, we'll find a country close-by to start from
-            testChat("getAreaTakeoverPath", "startCountry not given");
+            testChat("getAreaTakeoverPaths", "startCountry not given");
             
             int[] candidates = getPlayerCountriesInArea(ID, countryList, countries); // get countries in countryList that we own
 
@@ -155,7 +161,7 @@ public class Viking implements LuxAgent
                 
                 // just testing to see if we found the countries we own
                 String[] countryNames = getCountryNames(candidates);
-                testChat("getAreaTakeoverPath", "countries we own in goalCont: " + Arrays.toString(countryNames));
+                testChat("getAreaTakeoverPaths", "countries we own in goalCont: " + Arrays.toString(countryNames));
                 
                 // loop through candidates array, finding paths for each of them
                 int[] initialPath = new int[1];
@@ -165,26 +171,26 @@ public class Viking implements LuxAgent
                 }
             }
             else { // we don't own any countries in countryList
-                testChat("getAreaTakeoverPath", "we don't own any countries in goalCont");
+                testChat("getAreaTakeoverPaths", "we don't own any countries in goalCont");
                 // find the country outside of countryList that we own with the cheapest path to it
                 int[] initialPath = getCheapestRouteToArea(countryList);
                 
                 String[] countryNames = getCountryNames(initialPath);
-                testChat("getAreaTakeoverPath", "Path to continent: " + Arrays.toString(countryNames));
+                testChat("getAreaTakeoverPaths", "Path to continent: " + Arrays.toString(countryNames));
                 
                 // use that as starting country
                 paths = findAreaPaths(initialPath, countryList);
             }
         }
         
-        testChat("getAreaTakeoverPath", "There are " + paths.size() + " terminal paths");
+        testChat("getAreaTakeoverPaths", "There are " + paths.size() + " terminal paths");
         
         // choose and return the best paths
         return pickBestTakeoverPaths(paths, countryList);
     }
-    // overload getAreaTakeoverPath to allow a single parameter version
-    protected int[] getAreaTakeoverPath(int[] countryList) {
-        return getAreaTakeoverPath(countryList, -1);
+    // overload getAreaTakeoverPaths to allow a single parameter version
+    protected ArrayList getAreaTakeoverPaths(int[] countryList) {
+        return getAreaTakeoverPaths(countryList, -1);
     }
     
     // find the nearest country owned by ID and return the cheapest path
@@ -209,7 +215,8 @@ public class Viking implements LuxAgent
     // this function should find a comprehensive set of paths that pass through every enemy country in the area
     // ideally, it will find as few as possible that contain every enemy country
     // so far, however, all we're doing is picking one path. eventually, we'll add code to find the rest of them
-    protected int[] pickBestTakeoverPaths(ArrayList<int[]> allPaths, int[] area) {
+    protected ArrayList pickBestTakeoverPaths(ArrayList<int[]> allPaths, int[] area) {
+        ArrayList<int[]> results = new ArrayList<int[]>();
         
         // find the length of the longest path
         int maxPathLength = 0;
@@ -229,10 +236,10 @@ public class Viking implements LuxAgent
         }
         
         // display the whole list for testing purposes:
-        for (int i=0; i<allPaths.size(); i++) {
-            String[] countryNames = getCountryNames(allPaths.get(i));
-            testChat("pickBestTakeoverPath", Arrays.toString(allPaths.get(i)));
-        }
+//        for (int i=0; i<allPaths.size(); i++) {
+//            String[] countryNames = getCountryNames(allPaths.get(i));
+//            testChat("pickBestTakeoverPath", Arrays.toString(allPaths.get(i)));
+//        }
         
         // pick a path that ends in a border, if possible
         // eventually we'll be more sophisticated about this, but for now, this will do
@@ -247,9 +254,16 @@ public class Viking implements LuxAgent
             String[] countryNames = getCountryNames(longestPaths.get(i));
             testChat("pickBestTakeoverPath", Arrays.toString(countryNames) + " border? " + isBorder);
             
+            // for now, we'll just return the first one we find that ends in a border
+            if (isBorder) {
+                results.add(longestPaths.get(i));
+                return results;
+            }
         }
         
-        return new int[] {0,0,0,0};
+        // if we get here, none of the longest paths ended on a border, so for now, just return the first one
+        results.add(longestPaths.get(0));
+        return results;
     }
     
     //Checks to see if country is an area border by comparing its neighbors with a
