@@ -23,9 +23,14 @@ public class Viking implements LuxAgent
     // It might be useful to have a random number generator
     protected Random rand;
     
+    // we'll need to calculate attack plans in the placeArmies phase and remember them during the attackPhase
+    // so we'll store those plans in this variable
+    protected ArrayList<int[]> takeoverPlan;
+    
     public Viking()
     {
         rand = new Random();
+        takeoverPlan = new ArrayList<int[]>();
     }
     
     // Save references
@@ -53,14 +58,23 @@ public class Viking implements LuxAgent
     }
     
     protected void testChat(String topic, String message) {
-        if (topic == "placeInitialArmies") { board.sendChat(message); }
-        if (topic == "placeArmies") { board.sendChat(message); }
+        String[] topics = {
+            "placeInitialArmies",
+            "placeArmies",
+            "attackPhase",
+            
+//            "continentFitness",
+            "getAreaTakeoverPaths",
+//            "findAreaPaths",
+//            "pickBestTakeoverPaths",
+            "nothing"
+        };
         
-//        if (topic == "continentFitness") { board.sendChat(message); }
-        if (topic == "getAreaTakeoverPaths") { board.sendChat(message); }
-//        if (topic == "findAreaPaths") { board.sendChat(message); }
-//        if (topic == "pickBestTakeoverPaths") { board.sendChat(message); }
-
+        for (int i=0; i<topics.length; i++) {
+            if (topic == topics[i]) {
+                board.sendChat(message);
+            }
+        }
     }
     
     // pick initial countries at the beginning of the game. We will do this later.
@@ -73,25 +87,10 @@ public class Viking implements LuxAgent
     public void placeInitialArmies( int numberOfArmies ) {
         testChat("placeInitialArmies", "*********** PLACE INITIAL ARMIES ***********");
         
-        // first we'll decide what continents to pursue and thus which ones we'll place armies on
-        int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
-        int goalCont = bestContList[0]; // pick the best one from that list (eventually we'll be more sophisticated about this)
-        
-        testChat("placeInitialArmies","goalCont: " + board.getContinentName(goalCont));
-        
-        // next we need to pick a country to place our armies on in order to take over the continent
-        // the getContTakeoverPath function will simulate taking over the continent
-        // from multiple countries and give us back the best path to do so
-        // the first country in that path list is the one we want to place our armies on
-        int[] goalContCountries = getCountriesInContinent(goalCont, countries); // put all the countries from the goal cont into an integer array to pass to the getAreaTakeoverPaths function
-        ArrayList<int[]> contTakeoverPaths = getAreaTakeoverPaths(goalContCountries); // get the best path to take over the goalCont
-        
-        String[] countryNames = getCountryNames(contTakeoverPaths.get(0));
-        testChat("placeInitialArmies", "Path we picked: " + Arrays.toString(countryNames));
-        
-        // for now, just place all of our armies on the starting country of the path we picked
-        board.placeArmies(numberOfArmies, contTakeoverPaths.get(0)[0]);
-        
+        // for now, all we're going to do is dump all our armies on one country
+        // to try to take over a single continent. basically, exactly as we did in placeArmies()
+        // so we're actually just going to call placeArmies() for now
+        placeArmies(numberOfArmies);
     }
     
     public void cardsPhase( Card[] cards ) {
@@ -101,19 +100,67 @@ public class Viking implements LuxAgent
     public void placeArmies( int numberOfArmies ) {
         testChat("placeArmies", "*********** PLACE ARMIES ***********");
         
-        // for now, all we're going to do is dump all our armies on one country
-        // to try to take over a single continent. basically, exactly as we did in placeInitialArmies()
-        // so we're actually just going to call placeInitialArmies() for now
-        placeInitialArmies(numberOfArmies);
-    }
-    
-    public void attackPhase() {
+        // first we'll decide what continents to pursue and thus which ones we'll place armies on
         
+        int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
+        int goalCont = -1;
+        // pick the best continent that we don't already own:
+        for (int i=0; i<bestContList.length; i++) { // loop through continents from best to worst
+            // as soon as we find one that we don't own, pick it and stop looking
+            if (BoardHelper.playerOwnsContinent(ID, bestContList[i], countries) == false) {
+                goalCont = bestContList[i];
+                break;
+            }
+        }
+        
+        testChat("placeArmies","goalCont: " + board.getContinentName(goalCont));
+        
+        // next we need to pick a country to place our armies on in order to take over the continent
+        // the getContTakeoverPath function will simulate taking over the continent
+        // from multiple countries and give us back the best path to do so
+        // the first country in that path list is the one we want to place our armies on
+        int[] goalContCountries = getCountriesInContinent(goalCont, countries); // put all the countries from the goal cont into an integer array to pass to the getAreaTakeoverPaths function
+        takeoverPlan = getAreaTakeoverPaths(goalContCountries); // get the best paths to take over the goalCont; takeoverPlan is a global ArrayList<int[]> variable
+        
+        String[] countryNames = getCountryNames(takeoverPlan.get(0));
+        testChat("placeArmies", "Path we picked: " + Arrays.toString(countryNames));
+        
+        // for now, just place all of our armies on the starting country of the path we picked
+        int startCountry = takeoverPlan.get(0)[0];
+        if (countries[startCountry].getOwner() == ID) { // we should own it, but just in case
+            board.placeArmies(numberOfArmies, startCountry);
+        }
     }
     
+    // attack!
+    public void attackPhase() {
+        testChat("attackPhase", "*********** ATTACK PHASE ***********");
+        
+        // for now, all we're doing here is following the single route we calculated in placeArmies()
+        // we'll just attack from the beginning to the end of the route as long as we have armies
+        // left to keep on attacking
+        
+        // get the attack route we want to pursue, which was calculated in the placeArmies() phase
+        int[] attackRoute = takeoverPlan.get(0);
+        
+        String[] countryNames = getCountryNames(attackRoute);
+        testChat("attackPhase", "Attack Route: " + Arrays.toString(countryNames));
+        
+        // loop through the whole route
+        for(int i=0; i<attackRoute.length-1; i++) {
+            if (countries[attackRoute[i]].getArmies() > 1) { // if we have >1 army in the attacking country
+                board.attack(attackRoute[i],attackRoute[i+1],true); // attack the next country in the route
+            } else {
+                break;
+            }
+        }
+    }
+    
+    // decide how many armies to move upon a successful attack
     public int moveArmiesIn( int cca, int ccd)
     {
-        return 0;
+        // for now, always move all available armies into the conquered country
+        return countries[cca].getArmies() - 1;
     }
     
     public void fortifyPhase()
@@ -405,8 +452,8 @@ public class Viking implements LuxAgent
             name = board.getContinentName(cont);
             
             // calculate fitness
-//            fitness = (bonus * (numCountriesOwned + 1) * (numArmiesOwned + 1)) / ((float) Math.pow(numCountries,1.3) * (float) Math.pow(numBorders,2) * (numEnemyArmies + 1));
-            fitness = numCountries; // pick biggest continent for testing purposes
+            fitness = (bonus * (numCountriesOwned + 1) * (numArmiesOwned + 1)) / ((float) Math.pow(numCountries,1.3) * (float) Math.pow(numBorders,2) * (numEnemyArmies + 1));
+//            fitness = numCountries; // pick biggest continent for testing purposes
             
             fitnessMap.put(cont,fitness); // store fitness and ID as a key value pair in the map
             results[cont] = cont; // store continent ID's in this array, will get sorted later
