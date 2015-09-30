@@ -193,6 +193,8 @@ public class Viking implements LuxAgent
     // if startCountry is not provided, will test all the starting countries we own in the countryList and choose the best one
     // if we don't own any countries in the countryList, we'll find one nearby to start on
     protected ArrayList getAreaTakeoverPaths(int[] countryList, int startCountry) {
+        testChat("getAreaTakeoverPaths", "-- GET AREA TAKEOVER PATHS");
+        
         ArrayList<int[]> paths = new ArrayList<int[]>(); // we'll store all candidate paths here (individual paths are integer arrays)
         
         if (startCountry != -1) { // a startCountry was supplied, so find all paths starting from that country only
@@ -237,6 +239,49 @@ public class Viking implements LuxAgent
                 paths = findAreaPaths(initialPath, countryList);
             }
         }
+        
+        // Now go over all of the countries we have paths to, and see if any are left out.
+        // This should only happen with non-contigious areas/continents.
+        // Note that countriesLeft is an ArrayList, which is atypical (usually integer arrays are used).
+        ArrayList<Integer> countriesLeft = new ArrayList<Integer>();
+        for (int i=0; i<countryList.length; i++) { // first, create ArrayList of whole area
+            countriesLeft.add(countryList[i]);
+        }
+        int pathsSize = paths.size();
+        iLoop: for (int i=0; i<pathsSize; i++) { // loop through all paths
+            int[] path = paths.get(i);
+            for (int j=0; j<path.length; j++) { // loop through all countries in path
+                for (int k=0; k<countriesLeft.size(); k++) { // loop through all countries in area that we haven't seen yet (that's what countriesLeft represents)
+                    if (path[j] == countriesLeft.get(k)) { // if this country is in a path
+                        countriesLeft.remove(k); // remove it from countriesLeft
+                        break; // and continue checking the rest of them
+                    }
+                }
+                if (countriesLeft.size() == 0) { // if this is empty, every country in area is accounted for in paths
+                    break iLoop; // so stop looking, we're done
+                }
+            }
+        }
+        
+        // now anything left in countriesLeft was not accounted for in any path we found
+        // (which should only happen if the original area we searched was not contiguous and we didn't own a country in at least one of the discrete parts)
+        // so convert it into an integer array and pass it into getAreaTakeoverPaths() recursively as a new area to search
+        // then we'll add the results of that function call to the paths we already found
+        if (countriesLeft.size() > 0) {
+            int[] countriesLeftArray = new int[countriesLeft.size()];
+            for (int i=0; i<countriesLeftArray.length; i++) {
+                countriesLeftArray[i] = countriesLeft.get(i).intValue();
+            }
+            String[] countryNames = getCountryNames(countriesLeftArray);
+            testChat("getAreaTakeoverPaths", "countriesLeft: " + Arrays.toString(countryNames));
+            
+            // right now, the next line is causing an infinite loop, pending bug fix in getCheapestRouteToArea()
+//            paths.addAll(getAreaTakeoverPaths(countriesLeftArray));
+            
+        } else {
+            testChat("getAreaTakeoverPaths", "all countries were accounted for in the list of paths we found");
+        }
+
         
         testChat("getAreaTakeoverPaths", "There are " + paths.size() + " terminal paths");
         
@@ -452,7 +497,7 @@ public class Viking implements LuxAgent
             name = board.getContinentName(cont);
             
             // calculate fitness
-            fitness = (bonus * (numCountriesOwned + 1) * (numArmiesOwned + 1)) / ((float) Math.pow(numCountries,1.3) * (float) Math.pow(numBorders,2) * (numEnemyArmies + 1));
+            fitness = (bonus * (numCountriesOwned + 1) * (numArmiesOwned + 1)) / ((float) Math.pow(numCountries,1) * (float) Math.pow(numBorders,1) * (numEnemyArmies + 1));
 //            fitness = numCountries; // pick biggest continent for testing purposes
             
             fitnessMap.put(cont,fitness); // store fitness and ID as a key value pair in the map
