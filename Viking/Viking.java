@@ -192,59 +192,53 @@ public class Viking implements LuxAgent
     // to take over as many countries as possible in the given countryList (countryList may be a continent, for example, but doesn't have to be)
     // if startCountry is not provided, will test all the starting countries we own in the countryList and choose the best one
     // if we don't own any countries in the countryList, we'll find one nearby to start on
-    protected ArrayList getAreaTakeoverPaths(int[] countryList, int startCountry) {
-        testChat("getAreaTakeoverPaths", "-- GET AREA TAKEOVER PATHS");
+    protected ArrayList getAreaTakeoverPaths(int[] countryList) {
+        testChat("getAreaTakeoverPaths", "-- GET AREA TAKEOVER PATHS --");
+        testChat("getAreaTakeoverPaths", "startCountry not given");
         
-        ArrayList<int[]> paths = new ArrayList<int[]>(); // we'll store all candidate paths here (individual paths are integer arrays)
+        // we'll store all candidate paths here (individual paths are integer arrays)
+        ArrayList<int[]> paths = new ArrayList<int[]>();
+
+        // we'll test every path from every country we own in the countryList
+        // if we don't own any countries in countryList, we'll find a country close-by to start from
         
-        if (startCountry != -1) { // a startCountry was supplied, so find all paths starting from that country only
-            testChat("getAreaTakeoverPaths", "startCountry is " + startCountry);
+        int[] candidates = getPlayerCountriesInArea(ID, countryList, countries); // get countries in countryList that we own
+
+        if (candidates.length > 0) { // if we own any countries in countryList
             
-            // create an new history (integer array) containing only the starting country
+            // just testing to see if we found the countries we own
+            String[] countryNames = getCountryNames(candidates);
+            testChat("getAreaTakeoverPaths", "countries we own in goalCont: " + Arrays.toString(countryNames));
+            
+            // loop through candidates array, finding paths for each of them
             int[] initialPath = new int[1];
-            initialPath[0] = startCountry;
+            for (int i=0; i<candidates.length; i++) {
+                initialPath[0] = candidates[i];
+                paths.addAll(findAreaPaths(initialPath, countryList)); // concatenate results from all of them together in the paths ArrayList
+            }
+        }
+        else { // we don't own any countries in countryList
+            testChat("getAreaTakeoverPaths", "we don't own any countries in goalCont");
             
-            // find paths
+            // find the country outside of countryList that we own with the cheapest path to it
+            int[] initialPath = getCheapestRouteToArea(countryList);
+            
+            String[] countryNames = getCountryNames(initialPath);
+            testChat("getAreaTakeoverPaths", "Path to continent: " + Arrays.toString(countryNames));
+            
+            // use that as starting country
             paths = findAreaPaths(initialPath, countryList);
         }
-        else { // no startCountry was supplied, so pick our own candidates
-            // we'll test every path from every country we own in the countryList
-            // if we don't own any countries in countryList, we'll find a country close-by to start from
-            testChat("getAreaTakeoverPaths", "startCountry not given");
-            
-            int[] candidates = getPlayerCountriesInArea(ID, countryList, countries); // get countries in countryList that we own
-
-            if (candidates.length > 0) { // if we own any countries in countryList
-                
-                // just testing to see if we found the countries we own
-                String[] countryNames = getCountryNames(candidates);
-                testChat("getAreaTakeoverPaths", "countries we own in goalCont: " + Arrays.toString(countryNames));
-                
-                // loop through candidates array, finding paths for each of them
-                int[] initialPath = new int[1];
-                for (int i=0; i<candidates.length; i++) {
-                    initialPath[0] = candidates[i];
-                    paths.addAll(findAreaPaths(initialPath, countryList)); // concatenate results from all of them together in the paths ArrayList
-                }
-            }
-            else { // we don't own any countries in countryList
-                testChat("getAreaTakeoverPaths", "we don't own any countries in goalCont");
-                // find the country outside of countryList that we own with the cheapest path to it
-                int[] initialPath = getCheapestRouteToArea(countryList);
-                
-                String[] countryNames = getCountryNames(initialPath);
-                testChat("getAreaTakeoverPaths", "Path to continent: " + Arrays.toString(countryNames));
-                
-                // use that as starting country
-                paths = findAreaPaths(initialPath, countryList);
-            }
-        }
         
-        // Now go over all of the countries we have paths to, and see if any are left out.
-        // This should only happen with non-contigious areas/continents.
-        // Note that countriesLeft is an ArrayList, which is atypical (usually integer arrays are used).
-        ArrayList<Integer> countriesLeft = new ArrayList<Integer>();
-        for (int i=0; i<countryList.length; i++) { // first, create ArrayList of whole area
+        // now we have a complete list of terminal paths from every country we own in the area (countryList)
+        // (or from a nearby country in the case that we don't own any in the area itself)
+        // but we still need to go over all of the countries we have paths to, and see if any are left out.
+        // this will happen in the case of non-contigious areas, i.e. "you can't get there from here"
+        // so we'll check if any of the countries in countryList are not in any of the paths we found
+        // and repackage just them as a new area, call getAreaTakeoverPaths() recursively on that area
+        // and add the results to the paths ArrayList
+        ArrayList<Integer> countriesLeft = new ArrayList<Integer>(); // (note that countriesLeft is an ArrayList, which is atypical (usually integer arrays are used))
+        for (int i=0; i<countryList.length; i++) { // create ArrayList of whole area
             countriesLeft.add(countryList[i]);
         }
         int pathsSize = paths.size();
@@ -288,9 +282,24 @@ public class Viking implements LuxAgent
         // choose and return the best paths
         return pickBestTakeoverPaths(paths, countryList);
     }
-    // overload getAreaTakeoverPaths to allow a single parameter version
-    protected ArrayList getAreaTakeoverPaths(int[] countryList) {
-        return getAreaTakeoverPaths(countryList, -1);
+    // overload getAreaTakeoverPaths to allow a double parameter version
+    // in this version, a starting country is supplied, and we'll only search for paths starting from that country
+    protected ArrayList getAreaTakeoverPaths(int[] countryList, int startCountry) {
+        testChat("getAreaTakeoverPaths", "-- GET AREA TAKEOVER PATHS --");
+        testChat("getAreaTakeoverPaths", "startCountry is " + startCountry);
+        
+        // we'll store all candidate paths here (individual paths are integer arrays)
+        ArrayList<int[]> paths = new ArrayList<int[]>();
+        
+        // create an new history (integer array) containing only the starting country
+        int[] initialPath = new int[1];
+        initialPath[0] = startCountry;
+        
+        // find paths
+        paths = findAreaPaths(initialPath, countryList);
+        
+        // choose and return the best paths
+        return pickBestTakeoverPaths(paths, countryList);
     }
     
     // find the nearest country owned by ID and return the cheapest path
