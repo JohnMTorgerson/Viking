@@ -427,7 +427,7 @@ public class Viking implements LuxAgent
             
             // prune checkPaths
             // keep all the paths whose last element isn't in any of the chosen paths so far
-            // and discard all those whose last element IS in any of the chosen paths so far
+            // discarding all those whose last element IS in any of the chosen paths so far
             Iterator<int[]> checkPathsIterator = checkPaths.iterator();
             testChat("pickBestTakeoverPaths", "About to prune paths...");
             while (checkPathsIterator.hasNext()) { // loop through all the paths in checkPaths
@@ -459,7 +459,7 @@ public class Viking implements LuxAgent
     
     // given a list of takeover paths, pick the longest one
     // if there are multiple longest ones (which there often are),
-    // find the first of them that ends on a border and return that one
+    // find one that ends on a border and return that one
     // in future versions, we may want to be more sophisticated about which one to choose
     protected int[] findBestSingleTakeoverPath(ArrayList<int[]> paths, int[] area) {
         // find the length of the longest path
@@ -724,6 +724,24 @@ public class Viking implements LuxAgent
             names[i] = countries[codes[i]].getName();
         }
         return names;
+    }
+    
+    // THE FOLLOWING TWO FUNCTIONS HAVEN'T BEEN TESTED YET:
+    
+    // chat a list of countries by name, given an array of country codes
+    // callingFunc is simply a string to give to the testChat() function to tell it where the chatting is coming from; see testChat() for details
+    // primarily useful for testing purposes
+    protected void chatCountryNames(int[] codes, String callingFunc) {
+        String[] countryNames = getCountryNames(codes);
+        testChat(callingFunc, Arrays.toString(countryNames));
+    }
+    // chat a list of lists of countries by name, given a list of arrays of country codes
+    // callingFunc is simply a string to give to the testChat() function to tell it where the chatting is coming from; see testChat() for details
+    // primarily useful for testing purposes
+    protected void chatCountryNames(ArrayList<int[]> lists, String callingFunc) {
+        for(int i=0; i<lists.size(); i++) {
+            chatCountryNames(lists.get(i),callingFunc);
+        }
     }
     
     // helper function to return an array of the countries a player owns in a given continent
