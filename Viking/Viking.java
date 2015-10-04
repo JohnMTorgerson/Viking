@@ -67,7 +67,7 @@ public class Viking implements LuxAgent
 //            "continentFitness",
             "getAreaTakeoverPaths",
 //            "findAreaPaths",
-//            "pickBestTakeoverPaths",
+            "pickBestTakeoverPaths",
             "getCheapestRouteToArea",
             "nothing"
         };
@@ -89,7 +89,7 @@ public class Viking implements LuxAgent
     public void placeInitialArmies( int numberOfArmies ) {
         testChat("placeInitialArmies", "*********** PLACE INITIAL ARMIES ***********");
         
-        chatContinentNames();
+//        chatContinentNames();
         
         // for now, all we're going to do is dump all our armies on one country
         // to try to take over a single continent. basically, exactly as we did in placeArmies()
@@ -106,8 +106,8 @@ public class Viking implements LuxAgent
         
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
         
-//        int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
-        int[] bestContList = new int[] { 3,14,5 };
+        int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
+//        int[] bestContList = new int[] { 3,14,5 };
         
         int goalCont = -1;
         // pick the best continent that we don't already own:
@@ -194,9 +194,8 @@ public class Viking implements LuxAgent
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
     
-    // will return a path of attack from a country (optionally supplied by passing startCountry)
-    // to take over as many countries as possible in the given countryList (countryList may be a continent, for example, but doesn't have to be)
-    // if startCountry is not provided, will test all the starting countries we own in the countryList and choose the best one
+    // will return a set of all possible terminal attack paths from a country (optionally supplied by passing startCountry)
+    // if startCountry is not provided, will find paths from all the starting countries we own in the countryList
     // if we don't own any countries in the countryList, we'll find one nearby to start on
     protected ArrayList getAreaTakeoverPaths(int[] countryList) {
         testChat("getAreaTakeoverPaths", "-- GET AREA TAKEOVER PATHS --");
@@ -407,61 +406,105 @@ public class Viking implements LuxAgent
         return getCheapestRouteToArea(area, ID);
     }
     
-    // given a list of all possible takeover paths (allPaths) through a given country list (area)
-    // this function should find a comprehensive set of paths that pass through every enemy country in the area
+    // calls getAreaTakeoverPaths() to get a list of all possible takeover paths (allPaths) through a given country list (area)
+    // then finds a comprehensive set of paths that pass through every enemy country in the area, including forks and islands
     // ideally, it will find as few as possible that contain every enemy country
-    // so far, however, all we're doing is picking one path. eventually, we'll add code to find the rest of them
     protected ArrayList pickBestTakeoverPaths(int[] area) {
-        ArrayList<int[]> allPaths = getAreaTakeoverPaths(area);
+        ArrayList<int[]> checkPaths = getAreaTakeoverPaths(area); // first, get comprehensive list of paths
+        ArrayList<int[]> results = new ArrayList<int[]>(); // this will hold the results, which could be several paths, to include forks and islands
+        ArrayList<Integer> countriesLeft = new ArrayList<Integer>(); // list of countries not in any paths we've chosen so far
+        // initially populate countriesLeft with every country in area that we don't own
+        for (int i=0; i<area.length; i++) {
+            if (countries[area[i]].getOwner() != ID) {
+                countriesLeft.add(area[i]);
+            }
+        }
         
-        ArrayList<int[]> results = new ArrayList<int[]>();
+//        while (countriesLeft.size() > 0) {
+            // find the best single path from the pruned list of paths to check
+            // !!!! we actually want to truncate the return int[] of findBestSingleTakeoverPath() in the cases that it's a fork, before we add it to results!!!!!
+            results.add(findBestSingleTakeoverPath(checkPaths, area));
+            
+            // prune checkPaths
+            // keep all the paths whose last element isn't in any of the chosen paths so far
+            // and discard all those whose last element IS in any of the chosen paths so far
+            Iterator<int[]> checkPathsIterator = checkPaths.iterator();
+            testChat("pickBestTakeoverPaths", "About to prune paths...");
+            while (checkPathsIterator.hasNext()) { // loop through all the paths in checkPaths
+                //testChat("pickBestTakeoverPaths", Arrays.toString(checkPathsIterator.next()));
+                int[] thisCheckPath = checkPathsIterator.next(); // the path in checkPaths we're testing this loop
+                jLoop: for (int j=0; j<results.size(); j++) { // loop through all the paths in results
+                    int[] resultsPath = results.get(j); // the path in results we're checking against this loop
+                    for (int k=0; k<resultsPath.length; k++) { // loop through this path in results
+                        if (thisCheckPath[thisCheckPath.length-1] == resultsPath[k]) { // if the last element in thisCheckPath is in resultsPath
+                            checkPathsIterator.remove(); // remove thisCheckPath from checkPaths
+                            break jLoop; // move on to next path in checkPaths
+                        }
+                    }
+                }
+            }
         
+            // remove any countries in countriesLeft that are in any of the results paths
+
+//        }
+        
+        testChat("pickBestTakeoverPaths", "Pruned list of paths:");
+        for (int i=0; i<checkPaths.size(); i++) {
+            String[] countryNames = getCountryNames(checkPaths.get(i));
+            testChat("pickBestTakeoverPaths", Arrays.toString(countryNames));
+        }
+        
+        return results;
+    }
+    
+    // given a list of takeover paths, pick the longest one
+    // if there are multiple longest ones (which there often are),
+    // find the first of them that ends on a border and return that one
+    // in future versions, we may want to be more sophisticated about which one to choose
+    protected int[] findBestSingleTakeoverPath(ArrayList<int[]> paths, int[] area) {
         // find the length of the longest path
         int maxPathLength = 0;
-        int size = allPaths.size();
+        int size = paths.size();
         for (int i=0; i<size; i++) {
-            if (allPaths.get(i).length > maxPathLength) {
-                maxPathLength = allPaths.get(i).length;
+            if (paths.get(i).length > maxPathLength) {
+                maxPathLength = paths.get(i).length;
             }
         }
         
         // populate a new arraylist with all the longest paths
         ArrayList<int[]> longestPaths = new ArrayList<int[]>();
         for (int i=0; i<size; i++) {
-            if (allPaths.get(i).length == maxPathLength) {
-                longestPaths.add(allPaths.get(i));
+            if (paths.get(i).length == maxPathLength) {
+                longestPaths.add(paths.get(i));
             }
         }
         
         // display the whole list for testing purposes:
-//        for (int i=0; i<allPaths.size(); i++) {
-//            String[] countryNames = getCountryNames(allPaths.get(i));
-//            testChat("pickBestTakeoverPaths", Arrays.toString(allPaths.get(i)));
-//        }
+        //        for (int i=0; i<paths.size(); i++) {
+        //            String[] countryNames = getCountryNames(paths.get(i));
+        //            testChat("pickBestTakeoverPaths", Arrays.toString(paths.get(i)));
+        //        }
         
-        // pick a path that ends in a border, if possible
-        // eventually we'll be more sophisticated about this, but for now, this will do
+        // pick a path that ends in a border, if there is one
         size = longestPaths.size();
         int pathLength;
         boolean isBorder;
-        testChat("pickBestTakeoverPaths", "--- Longest paths: ---");
+        testChat("findBestSingleTakeoverPath", "--- Longest paths: ---");
         for (int i=0; i<size; i++) {
             pathLength = longestPaths.get(i).length;
             isBorder = isAreaBorder(longestPaths.get(i)[pathLength-1],area);
             
             String[] countryNames = getCountryNames(longestPaths.get(i));
-            testChat("pickBestTakeoverPaths", Arrays.toString(countryNames) + " border? " + isBorder);
+            testChat("findBestSingleTakeoverPath", Arrays.toString(countryNames) + " border? " + isBorder);
             
             // for now, we'll just return the first one we find that ends in a border
             if (isBorder) {
-                results.add(longestPaths.get(i));
-                return results;
+                return longestPaths.get(i);
             }
         }
         
-        // if we get here, none of the longest paths ended on a border, so for now, just return the first one
-        results.add(longestPaths.get(0));
-        return results;
+        // if we get here, none of the longest paths ended on a border, so just return the first one
+        return longestPaths.get(0);
     }
     
     // checks to see if country is a border of area by seeing if any of its
