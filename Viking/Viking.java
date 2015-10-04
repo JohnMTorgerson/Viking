@@ -40,6 +40,7 @@ public class Viking implements LuxAgent
         
         board = theboard;
         countries = board.getCountries();
+
     }
     
     public String name()
@@ -67,6 +68,7 @@ public class Viking implements LuxAgent
             "getAreaTakeoverPaths",
 //            "findAreaPaths",
 //            "pickBestTakeoverPaths",
+            "getCheapestRouteToArea",
             "nothing"
         };
         
@@ -87,6 +89,8 @@ public class Viking implements LuxAgent
     public void placeInitialArmies( int numberOfArmies ) {
         testChat("placeInitialArmies", "*********** PLACE INITIAL ARMIES ***********");
         
+        chatContinentNames();
+        
         // for now, all we're going to do is dump all our armies on one country
         // to try to take over a single continent. basically, exactly as we did in placeArmies()
         // so we're actually just going to call placeArmies() for now
@@ -102,7 +106,9 @@ public class Viking implements LuxAgent
         
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
         
-        int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
+//        int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
+        int[] bestContList = new int[] { 3,14,5 };
+        
         int goalCont = -1;
         // pick the best continent that we don't already own:
         for (int i=0; i<bestContList.length; i++) { // loop through continents from best to worst
@@ -120,7 +126,7 @@ public class Viking implements LuxAgent
         // from multiple countries and give us back the best path to do so
         // the first country in that path list is the one we want to place our armies on
         int[] goalContCountries = getCountriesInContinent(goalCont, countries); // put all the countries from the goal cont into an integer array to pass to the getAreaTakeoverPaths function
-        takeoverPlan = getAreaTakeoverPaths(goalContCountries); // get the best paths to take over the goalCont; takeoverPlan is a global ArrayList<int[]> variable
+        takeoverPlan = pickBestTakeoverPaths(goalContCountries); // get the best paths to take over the goalCont; takeoverPlan is a global ArrayList<int[]> variable
         
         String[] countryNames = getCountryNames(takeoverPlan.get(0));
         testChat("placeArmies", "Path we picked: " + Arrays.toString(countryNames));
@@ -270,7 +276,7 @@ public class Viking implements LuxAgent
             testChat("getAreaTakeoverPaths", "countriesLeft: " + Arrays.toString(countryNames));
             
             // right now, the next line is causing an infinite loop, pending bug fix in getCheapestRouteToArea()
-//            paths.addAll(getAreaTakeoverPaths(countriesLeftArray));
+            paths.addAll(getAreaTakeoverPaths(countriesLeftArray));
             
         } else {
             testChat("getAreaTakeoverPaths", "all countries were accounted for in the list of paths we found");
@@ -280,7 +286,7 @@ public class Viking implements LuxAgent
         testChat("getAreaTakeoverPaths", "There are " + paths.size() + " terminal paths");
         
         // choose and return the best paths
-        return pickBestTakeoverPaths(paths, countryList);
+        return paths;
     }
     // overload getAreaTakeoverPaths to allow a double parameter version
     // in this version, a starting country is supplied, and we'll only search for paths starting from that country
@@ -299,20 +305,101 @@ public class Viking implements LuxAgent
         paths = findAreaPaths(initialPath, countryList);
         
         // choose and return the best paths
-        return pickBestTakeoverPaths(paths, countryList);
+        return paths;
     }
     
     // find the nearest country owned by ID and return the cheapest path
     // from it to a country in the given area (area could be a continent, for example)
-    protected int[] getCheapestRouteToArea(int[] area, int ID) {
-        // eventually this will be a custom written function to find the cheapest path to the given area
-        // for the moment, however, we'll just assume that the area is the continent that contains the first country in the area array
-        // this definitely will need to get changed at some point
-
-        int continent = countries[area[0]].getContinent();
-        int[] path = BoardHelper.cheapestRouteFromOwnerToCont(ID, continent, countries);
-
-        return path;
+    protected int[] getCheapestRouteToArea(int[] area, int owner) {
+        
+        String[] countryNames = getCountryNames(area);
+        testChat("getCheapestRouteToArea", "getCheapestRouteToArea area: " + Arrays.toString(countryNames));
+        
+        if (owner < 0 || area.length == 0) {
+            System.out.println("ERROR in cheapestRouteFromOwnerToCont() -> bad parameters");
+            return null;
+        }
+        
+        // first, check to see if we already own a country in the area.
+        int[] ownedCountries = getPlayerCountriesInArea(owner, area, countries);
+        if (ownedCountries.length > 0) {
+            // the player owns a country in the area already. That country itself is the cheapest route
+            // so simply return the first one in the list of owned countries
+            return new int[] { ownedCountries[0] };
+        }
+        
+        // We keep track of which countries we have already seen (so we don't
+        // consider the same country twice). We do it with a boolean array, with
+        // a true/false value for each of the countries:
+        boolean[] haveSeenAlready = new boolean[countries.length];
+        for (int i = 0; i < countries.length; i++)
+        {
+            haveSeenAlready[i] = false;
+        }
+        
+        // Create a Q (with a history) to store the country-codes and their cost
+        // so far:
+        CountryPathStack Q = new CountryPathStack();
+        
+        // We explore from all the borders of <continent>
+        int testCode, armiesSoFar;
+        int[] testCodeHistory;
+        int[] borderCodes = getAreaBorders(area);
+        for (int i = 0; i < borderCodes.length; i++) {
+            testCode = borderCodes[i];
+            armiesSoFar = 0;
+            testCodeHistory = new int[1];
+            testCodeHistory[0] = testCode;
+            haveSeenAlready[testCode] = true;
+            
+            Q.pushWithValueAndHistory(
+                                      countries[borderCodes[i]], 0, testCodeHistory );
+        }
+        
+        // So now we have all the continent borders in the Q (all with cost 0),
+        // expand every possible outward path (in the order of cost).
+        // eventually we should find a country owned by <owner>,
+        // then we return that path's history
+        while ( true ) {
+            armiesSoFar = Q.topValue();
+            testCodeHistory = Q.topHistory();
+            testCode = Q.pop();
+            
+            if ( countries[testCode].getOwner() == owner ) {
+                // we have found the best path. return it
+                return testCodeHistory;
+            }
+            
+            int[] canAttackInto = BoardHelper.getAttackList(countries[testCode], countries);
+            
+            for (int i=0; i<canAttackInto.length; i++) {
+                if (!haveSeenAlready[canAttackInto[i]]) {
+                    // Create the new node's history array. (It is just 
+                    // testCode's history with its CC added at the beginning):
+                    int[] newHistory = new int[ testCodeHistory.length + 1 ];
+                    newHistory[0] = canAttackInto[i];
+                    for (int j = 1; j < newHistory.length; j++) {
+                        newHistory[j] = testCodeHistory[j-1];
+                    }
+                    Q.pushWithValueAndHistory( 
+                                              countries[canAttackInto[i]], 
+                                              // If the neighbor is owned by the proper person then subtract
+                                              // its armies from the value so it gets pulled off the Q next.
+                                              // Without this there is a bug					
+                                              armiesSoFar + (countries[canAttackInto[i]].getOwner() == owner ? -countries[canAttackInto[i]].getArmies() : countries[canAttackInto[i]].getArmies()),
+                                              newHistory );
+                    haveSeenAlready[ countries[canAttackInto[i]].getCode() ] = true;
+                }
+            }
+            
+            // as far as we know, this should only happen in maps with one-way connections
+            // if the only country owned by owner is trapped behind a one-way connection from the area
+            if (Q.isEmpty()) {
+                System.out.println("ERROR in cheapestRouteFromOwnerToCont->can't pop");
+                return null;
+            }
+        }
+        // End of cheapestRouteFromOwnerToCont
     }
     // overload getCheapestRouteToArea to allow a single parameter version
     // if no ID is provided, assume it should be the owner
@@ -324,7 +411,9 @@ public class Viking implements LuxAgent
     // this function should find a comprehensive set of paths that pass through every enemy country in the area
     // ideally, it will find as few as possible that contain every enemy country
     // so far, however, all we're doing is picking one path. eventually, we'll add code to find the rest of them
-    protected ArrayList pickBestTakeoverPaths(ArrayList<int[]> allPaths, int[] area) {
+    protected ArrayList pickBestTakeoverPaths(int[] area) {
+        ArrayList<int[]> allPaths = getAreaTakeoverPaths(area);
+        
         ArrayList<int[]> results = new ArrayList<int[]>();
         
         // find the length of the longest path
@@ -377,7 +466,7 @@ public class Viking implements LuxAgent
     
     // checks to see if country is a border of area by seeing if any of its
     // neighbors is outside of area
-    boolean isAreaBorder (int country, int[] area) {
+    protected boolean isAreaBorder (int country, int[] area) {
         int[] neighbors = countries[country].getAdjoiningCodeList(); // get neighbors
         boolean inArea = false;
         
@@ -394,6 +483,24 @@ public class Viking implements LuxAgent
             }
         }
         return false; // if we got here, all of the neighbors were in area, so country is not a border; return false
+    }
+    
+    // returns an int[] of all the borders of the given area
+    protected int[] getAreaBorders(int[] area) {
+        ArrayList<Integer> borders = new ArrayList<Integer>();
+        
+        for (int i=0; i<area.length; i++) {
+            if (isAreaBorder(area[i],area)) {
+                borders.add(area[i]);
+            }
+        }
+        
+        int[] bordersArray = new int[borders.size()];
+        for (int i=0; i<bordersArray.length; i++) {
+            bordersArray[i] = borders.get(i);
+        }
+        
+        return bordersArray;
     }
     
     // find all possible paths through enemy countries within countryList
@@ -649,4 +756,11 @@ public class Viking implements LuxAgent
         return BoardHelper.getContinentBorders(cont, countries);
     }
     
+    // chat out all continent codes and names
+    protected void chatContinentNames() {
+        int numConts = board.getNumberOfContinents();
+        for (int i=0; i<numConts; i++) {
+            board.sendChat(i + " - " + board.getContinentName(i));
+        }
+    }
 }
