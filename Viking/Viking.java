@@ -106,8 +106,8 @@ public class Viking implements LuxAgent
         
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
         
-        int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
-//        int[] bestContList = new int[] { 3,14,5 };
+//        int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
+        int[] bestContList = new int[] { 3,14,5 }; // interesting continents in U.S.S. Lionheart map
         
         int goalCont = -1;
         // pick the best continent that we don't already own:
@@ -309,6 +309,7 @@ public class Viking implements LuxAgent
     
     // find the nearest country owned by ID and return the cheapest path
     // from it to a country in the given area (area could be a continent, for example)
+    // this is a modified version of the BoardHelper method cheapestRouteFromOwnerToCont()
     protected int[] getCheapestRouteToArea(int[] area, int owner) {
         
         String[] countryNames = getCountryNames(area);
@@ -406,11 +407,14 @@ public class Viking implements LuxAgent
         return getCheapestRouteToArea(area, ID);
     }
     
+    // called in the placeArmies() and placeInitialArmies() phases
+    // given that the bot has already chosen a continent (or abstract area) to pursue, this function should find a comprehensive plan
+    // to takeover that continent/area in the form of a set of int[] arrays of country codes that form attack paths from countries we own
     // calls getAreaTakeoverPaths() to get a list of all possible takeover paths (allPaths) through a given country list (area)
     // then finds a comprehensive set of paths that pass through every enemy country in the area, including forks and islands
-    // ideally, it will find as few as possible that contain every enemy country
+    // ideally, it will find as few as possible that contain every enemy country in the area
     protected ArrayList pickBestTakeoverPaths(int[] area) {
-        ArrayList<int[]> checkPaths = getAreaTakeoverPaths(area); // first, get comprehensive list of paths
+        ArrayList<int[]> checkPaths = getAreaTakeoverPaths(area); // first, get comprehensive list of paths; this could be thousands of elements long in large cases
         ArrayList<int[]> results = new ArrayList<int[]>(); // this will hold the results, which could be several paths, to include forks and islands
         ArrayList<Integer> countriesLeft = new ArrayList<Integer>(); // list of countries not in any paths we've chosen so far
         // initially populate countriesLeft with every country in area that we don't own
@@ -422,17 +426,50 @@ public class Viking implements LuxAgent
         
         testChat("pickBestTakeoverPaths", "-- PICK BEST TAKEOVER PATHS --");
         
+        // now the meat:
+        // in each iteration of this loop, we'll pick a new path out of checkPaths to put in the results arraylist.
+        // then, if we've already chosen other paths, we'll need to prune the one we just picked of any overlap with them.
+        // there should only ever be overlap at the beginning of the new path, in which case it will be a branch of a fork,
+        // so we'll want to store the path only the branch point forward (the place armies and attack phase will know how to deal with that).
+        // so after we do all that, next we'll prune the list of potential paths (checkPaths) of any whose last element is contained somewhere within one of the results paths we've already chosen.
+        // that way, next time around the loop, we're guaranteed to choose a path that ends in a country we haven't covered yet.
+        // finally, we'll prune the countriesLeft arraylist of any countries covered in the path we just picked, so that it only contains countries that aren't in any of the paths we've chosen so far.
+        // when countriesLeft is empty, we'll know that we've found a comprehensive set of paths to take over the area, so we'll be done with the loop.
         while (countriesLeft.size() > 0) {
             // find the best single path from the pruned list of paths to check
-            // !!!! we actually want to truncate the return int[] of findBestSingleTakeoverPath() in the cases that it's a fork, before we add it to results!!!!!
-            results.add(findBestSingleTakeoverPath(checkPaths, area));
+            int[] newPath = findBestSingleTakeoverPath(checkPaths, area); // see findBestSingleTakeoverPath() for the criteria we use to pick the best path
+            
+            // now we search for a common element with any of the paths we've already chosen
+            // if we find one, this will be a branch point (fork), so we'll truncate everything from the new path before the branch point
+            int newStart = 0;
+            newPathLoop: for (int i=newPath.length-1; i>=0; i--) { // iterate backwards through newPath
+                for (int[] resultsPath : results) { // loop through all the paths we've already picked
+                    for (int resultsCountry : resultsPath) { // loop through this path we've already picked
+                        if (newPath[i] == resultsCountry) { // if this country in newPath is in one of the old paths
+                            newStart = i; // store the index
+                            break newPathLoop; // quit searching
+                        }
+                    }
+                }
+            }
+            // now truncate the beginning of newPath
+            // if we didn't find a branch point, it will not be affected
+            int[] newPathCut = new int[newPath.length - newStart]; // make new array of appropriate length
+            System.arraycopy(newPath, newStart, newPathCut, 0, newPathCut.length); // copy end of newPath into it
+            
+            testChat("pickBestTakeoverPaths", "-- New path uncut, then cut: ");
+            chatCountryNames("pickBestTakeoverPaths", newPath);
+            chatCountryNames("pickBestTakeoverPaths", newPathCut);
+
+            // add truncated array to results
+            results.add(newPathCut);
+
             testChat("pickBestTakeoverPaths", "-- Paths we're picking:");
             chatCountryNames("pickBestTakeoverPaths", results);
             
             // prune checkPaths
             // keep all the paths whose last element isn't in any of the chosen paths so far
             // discarding all those whose last element IS in any of the chosen paths so far
-//            testChat("pickBestTakeoverPaths", "Pruning paths...");
             Iterator<int[]> checkPathsIterator = checkPaths.iterator();
             while (checkPathsIterator.hasNext()) { // loop through all the paths in checkPaths
                 //testChat("pickBestTakeoverPaths", Arrays.toString(checkPathsIterator.next()));
@@ -451,7 +488,6 @@ public class Viking implements LuxAgent
             chatCountryNames("pickBestTakeoverPaths", checkPaths);
         
             // remove any countries in countriesLeft that are in any of the results paths
-//            testChat("pickBestTakeoverPaths", "Pruning countriesLeft...");
             Iterator<Integer> countriesLeftIterator = countriesLeft.iterator();
             while (countriesLeftIterator.hasNext()) { // loop through countriesLeft
                 int thisCountry = countriesLeftIterator.next();
