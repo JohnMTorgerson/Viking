@@ -420,40 +420,60 @@ public class Viking implements LuxAgent
             }
         }
         
-//        while (countriesLeft.size() > 0) {
+        testChat("pickBestTakeoverPaths", "-- PICK BEST TAKEOVER PATHS --");
+        
+        while (countriesLeft.size() > 0) {
             // find the best single path from the pruned list of paths to check
             // !!!! we actually want to truncate the return int[] of findBestSingleTakeoverPath() in the cases that it's a fork, before we add it to results!!!!!
             results.add(findBestSingleTakeoverPath(checkPaths, area));
+            testChat("pickBestTakeoverPaths", "-- Paths we're picking:");
+            chatCountryNames("pickBestTakeoverPaths", results);
             
             // prune checkPaths
             // keep all the paths whose last element isn't in any of the chosen paths so far
             // discarding all those whose last element IS in any of the chosen paths so far
+//            testChat("pickBestTakeoverPaths", "Pruning paths...");
             Iterator<int[]> checkPathsIterator = checkPaths.iterator();
-            testChat("pickBestTakeoverPaths", "About to prune paths...");
             while (checkPathsIterator.hasNext()) { // loop through all the paths in checkPaths
                 //testChat("pickBestTakeoverPaths", Arrays.toString(checkPathsIterator.next()));
                 int[] thisCheckPath = checkPathsIterator.next(); // the path in checkPaths we're testing this loop
-                jLoop: for (int j=0; j<results.size(); j++) { // loop through all the paths in results
-                    int[] resultsPath = results.get(j); // the path in results we're checking against this loop
-                    for (int k=0; k<resultsPath.length; k++) { // loop through this path in results
-                        if (thisCheckPath[thisCheckPath.length-1] == resultsPath[k]) { // if the last element in thisCheckPath is in resultsPath
+                iLoop1: for (int i=0; i<results.size(); i++) { // loop through all the paths in results
+                    int[] resultsPath = results.get(i); // the path in results we're checking against this loop
+                    for (int j=0; j<resultsPath.length; j++) { // loop through this path in results
+                        if (thisCheckPath[thisCheckPath.length-1] == resultsPath[j]) { // if the last element in thisCheckPath is in resultsPath
                             checkPathsIterator.remove(); // remove thisCheckPath from checkPaths
-                            break jLoop; // move on to next path in checkPaths
+                            break iLoop1; // move on to next path in checkPaths
                         }
                     }
                 }
             }
+            testChat("pickBestTakeoverPaths", "-- Pruned list of paths:");
+            chatCountryNames("pickBestTakeoverPaths", checkPaths);
         
             // remove any countries in countriesLeft that are in any of the results paths
-
-//        }
-        
-        testChat("pickBestTakeoverPaths", "Pruned list of paths:");
-        for (int i=0; i<checkPaths.size(); i++) {
-            String[] countryNames = getCountryNames(checkPaths.get(i));
-            testChat("pickBestTakeoverPaths", Arrays.toString(countryNames));
+//            testChat("pickBestTakeoverPaths", "Pruning countriesLeft...");
+            Iterator<Integer> countriesLeftIterator = countriesLeft.iterator();
+            while (countriesLeftIterator.hasNext()) { // loop through countriesLeft
+                int thisCountry = countriesLeftIterator.next();
+                iLoop2: for (int i=0; i<results.size(); i++) { // loop through results list
+                    int[] thisResult = results.get(i);
+                    for (int j=0; j<thisResult.length; j++) { // loop through this result path
+                        if (thisResult[j] == thisCountry) { // if this country in countriesLeft is in a results array
+                            countriesLeftIterator.remove(); // then remove it from countriesLeft
+                            break iLoop2; // and skip to the next country in countriesLeft
+                        }
+                    }
+                }
+            }
+            testChat("pickBestTakeoverPaths", "-- Pruned version of countriesLeft:");
+            if (countriesLeft.size() > 0) {
+                chatCountryNames("pickBestTakeoverPaths", countriesLeft);
+            } else {
+                testChat("pickBestTakeoverPaths", "[] - no countries in countriesLeft");
+            }
+            testChat("pickBestTakeoverPaths", "--------------------------");
         }
-        
+
         return results;
     }
     
@@ -730,17 +750,43 @@ public class Viking implements LuxAgent
     
     // chat a list of countries by name, given an array of country codes
     // callingFunc is simply a string to give to the testChat() function to tell it where the chatting is coming from; see testChat() for details
-    // primarily useful for testing purposes
-    protected void chatCountryNames(int[] codes, String callingFunc) {
+    // useful for testing purposes
+    protected void chatCountryNames(String callingFunc, int[] codes) {
+        if (codes.length < 1) { return; } // if we're passed an empty array, simply do nothing
         String[] countryNames = getCountryNames(codes);
         testChat(callingFunc, Arrays.toString(countryNames));
     }
-    // chat a list of lists of countries by name, given a list of arrays of country codes
+    // chat a list, either of arrays of countries (the usual case), or simply of countries (unusual)
+    // converting, in both cases, the country codes to country names
+    // **NOTE!** this function assumes that all the elements of list are the same type. It may act unexpectedly if they are not
     // callingFunc is simply a string to give to the testChat() function to tell it where the chatting is coming from; see testChat() for details
-    // primarily useful for testing purposes
-    protected void chatCountryNames(ArrayList<int[]> lists, String callingFunc) {
-        for(int i=0; i<lists.size(); i++) {
-            chatCountryNames(lists.get(i),callingFunc);
+    // useful for testing purposes
+    protected void chatCountryNames(String callingFunc, ArrayList list) {
+        if (list.size() < 1) { return; } // if we're passed an empty ArrayList, simply do nothing
+        // if the first element in list is an int[], we'll assume they all are, and this is a list of paths
+        // so we'll loop through list and chat out each path separately
+        if (list.get(0) instanceof int[]) {
+            for(int i=0; i<list.size(); i++) {
+                if (list.get(i) instanceof int[]) {
+                    int[] codesArray = (int[]) list.get(i);
+                    chatCountryNames(callingFunc, codesArray);
+                }
+            }
+        }
+        // if the first element in list is an integer, we'll assume they all are, and this is a list of countries
+        // so we'll convert list into an int[], and chat it out all at once
+        if (list.get(0) instanceof Integer) {
+            // first convert the ArrayList into an int[] array
+            int[] codesArray = new int[list.size()];
+            for (int i=0; i<codesArray.length; i++) {
+                if (list.get(i) instanceof Integer) {
+                    codesArray[i] = (Integer) list.get(i);
+                } else {
+                    codesArray[i] = -1;
+                }
+            }
+            // then call chatCountryNames using the int[] array
+            chatCountryNames(callingFunc, codesArray);
         }
     }
     
