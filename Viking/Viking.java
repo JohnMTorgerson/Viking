@@ -106,8 +106,8 @@ public class Viking implements LuxAgent
         
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
         
-//        int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
-        int[] bestContList = new int[] { 3,14,5 }; // interesting continents in U.S.S. Lionheart map
+        int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
+//        int[] bestContList = new int[] { 3,14,5 }; // interesting continents in U.S.S. Lionheart map
         
         int goalCont = -1;
         // pick the best continent that we don't already own:
@@ -131,10 +131,16 @@ public class Viking implements LuxAgent
         String[] countryNames = getCountryNames(takeoverPlan.get(0));
         testChat("placeArmies", "Path we picked: " + Arrays.toString(countryNames));
         
-        // for now, just place all of our armies on the starting country of the path we picked
-        int startCountry = takeoverPlan.get(0)[0];
-        if (countries[startCountry].getOwner() == ID) { // we should own it, but just in case
-            board.placeArmies(numberOfArmies, startCountry);
+        // loop through the starting country of each path,
+        // placing an army on each one until we're out
+        while (numberOfArmies > 0) {
+            for (int i=0; i<takeoverPlan.size(); i++) {
+                int startCountry = takeoverPlan.get(i)[0];
+                if (countries[startCountry].getOwner() == ID && numberOfArmies > 0) {
+                    board.placeArmies(1, startCountry);
+                    numberOfArmies -= 1;
+                }
+            }
         }
     }
     
@@ -142,22 +148,27 @@ public class Viking implements LuxAgent
     public void attackPhase() {
         testChat("attackPhase", "*********** ATTACK PHASE ***********");
         
-        // for now, all we're doing here is following the single route we calculated in placeArmies()
-        // we'll just attack from the beginning to the end of the route as long as we have armies
-        // left to keep on attacking
-        
-        // get the attack route we want to pursue, which was calculated in the placeArmies() phase
-        int[] attackRoute = takeoverPlan.get(0);
-        
-        String[] countryNames = getCountryNames(attackRoute);
-        testChat("attackPhase", "Attack Route: " + Arrays.toString(countryNames));
-        
-        // loop through the whole route
-        for(int i=0; i<attackRoute.length-1; i++) {
-            if (countries[attackRoute[i]].getArmies() > 1) { // if we have >1 army in the attacking country
-                board.attack(attackRoute[i],attackRoute[i+1],true); // attack the next country in the route
+        // loop through takeoverPlan (calculated in the placeArmies() phase),
+        // which contains multiple attack routes, and execute each one
+        for (int i=0; i<takeoverPlan.size(); i++) {
+            testChat("attackPhase", "Attack route:");
+            chatCountryNames("attackPhase", takeoverPlan.get(i));
+            
+            if (countries[takeoverPlan.get(i)[0]].getOwner() == ID) { // if we own the first country in the path
+                int[] attackRoute = takeoverPlan.get(i);
+                
+                testChat("attackPhase", "First country on route has " + countries[attackRoute[0]].getArmies() + " armies.");
+                
+                // loop through the whole route, attacking as we go
+                for(int j=0; j<attackRoute.length-1; j++) {
+                    if (countries[attackRoute[j]].getArmies() > 1) { // if we have > 1 army in the attacking country
+                        board.attack(attackRoute[j],attackRoute[j+1],true); // attack the next country in the route
+                    } else {
+                        break;
+                    }
+                }
             } else {
-                break;
+                testChat("attackPhase", "We do not own the starting country of this route");
             }
         }
     }
