@@ -254,14 +254,16 @@ public class Viking implements LuxAgent
         int cost = 0;
         for (int i=0; i<plan.size(); i++) {
             if (countries[plan.get(i)[0]].getOwner() == ID) {
-                // calculatePathCost() returns the number of armies it will take to conquer this path
+                // calculateCladeCost() returns the number of armies it will take to conquer this path and all of its forks
                 // not accounting for how many armies we have on the starting country
                 cost = calculateCladeCost(plan, i);
                 
                 chatCountryNames("placeArmiesOnRoutes", plan.get(i));
                 testChat("placeArmiesOnRoutes","Cost to take over the above path: " + cost);
                 
-                // then place cost on the starting country of the path here
+                // subtract the number of armies on the starting country from cost
+                
+                // if cost is still positive, place cost on the starting country of the path here
                 
                 // and subtract cost from numberOfArmies
             }
@@ -280,12 +282,12 @@ public class Viking implements LuxAgent
     // and adds up all of their costs together and returns that number
     protected int calculateCladeCost(ArrayList<int[]> plan, int index) {
         int cost = 0;
-        int[] originalPath = plan.get(index);
-        cost += calculatePathCost(originalPath);
-        //for (int i=1 i<originalPlan.length; i++) {
-        //  for (int j=0; j<plan.size(); j++) {
-        //      if (originalPlan[i] == plan.get(j)[0]) {
-        //          cost += calculateCladeCost(plan, j);
+        int[] path = plan.get(index);
+        cost += calculatePathCost(path); // calculate the cost of the main path
+        //for (int i=1 i<path.length; i++) { loop through the main path to check to see if each country is a branch point for a fork
+        //  for (int j=0; j<plan.size(); j++) { // loop through the rest of the paths in the plan to find any that begin at this country
+        //      if (path[i] == plan.get(j)[0]) { // if one does, it is a fork
+        //          cost += calculateCladeCost(plan, j); // so recurse, and add that result to the cost
         //      }
         //  }
         //}
@@ -295,21 +297,22 @@ public class Viking implements LuxAgent
     
     // calculate the number of armies it will require to take over a whole path (not including the starting country, which we assume we own)
     // does not subtract the number of armies we already have on the first country in the path
-    // THIS FUNCTION HAS NOT BEEN TESTED YET
+    // does not account for any forks, only calculates over a single path
+    // note that "cost" in this function is not simply the number of enemy armies in the way
+    // rather, it is an estimate of how many armies it will actually take to conquer the given path
     protected int calculatePathCost(int[] path) {
-        // note that "cost" in this function is not simply the number of enemy armies in the way
-        // rather, it is an estimate of how many armies it will actually take to conquer the given path
         float cost = 0;
         for (int i=1; i<path.length; i++) { // loop through the path, beginning on the SECOND country
             cost += countries[path[i]].getArmies(); // add enemy armies to the cost
         }
+        
         // here comes the subjective part
         // cost so far contains just the number of enemy armies
         // but this number isn't enough to ensure a successful takeover, so we will add a buffer
-        cost *= 1.1;
-        cost += path.length - 1;
+        cost *= 1.1; // add a buffer of 10% of the enemy armies
+        cost += path.length - 1; // add 1 additional army for each country in the path, since we always have to leave 1 behind as we attack
 
-        return (int) Math.ceil(cost);
+        return (int) Math.ceil(cost); // round UP to the nearest integer and return
     }
     
     // will return a set of all possible terminal attack paths from a country (optionally supplied by passing startCountry)
