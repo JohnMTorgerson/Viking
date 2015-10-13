@@ -3,10 +3,9 @@ Issues which will need to be addressed in the future.
  === Stopgap Measures ===
  These are shortcuts we have taken to speed up development which result in precarious code, the parents of future bugs.
  
-  - We are making use of BoardHelper.cheapeastRouteFromOwnerToCont in getCheapestRouteToArea, even though it is restricted to continents, and thus if the bot decides to take over a non-continent area, an approach we support in other areas, it will fail.
+  - 
   
  === Missing Features === 
  These are things which are unlikely to break anything when absent, but will result in a smarter bot.
 
- - handle forking when finding paths
- - handle islands when finding paths
+ - findBestSingleTakeoverPath() should pick the path with the most armies on the starting country if all else is equal

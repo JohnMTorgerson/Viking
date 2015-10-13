@@ -31,7 +31,7 @@ public class Viking implements LuxAgent
     // after successfully attacking a country. attackPhase() will set this to the number of forks
     // that split off from that point when it attacks through the branch point of a fork
     // so that moveArmiesIn() will know how many armies to leave behind
-    protected int forkArmies = 1;
+    protected int forkArmies;
     
     public Viking()
     {
@@ -76,6 +76,7 @@ public class Viking implements LuxAgent
 //            "findAreaPaths",
 //            "pickBestTakeoverPaths",
 //            "getCheapestRouteToArea",
+            "placeArmiesOnRoutes",
             "nothing"
         };
         
@@ -150,6 +151,11 @@ public class Viking implements LuxAgent
                 }
             }
         }
+        
+        // place only the number of armies needed to takeover the continent on the starting countries of all the paths
+        // store any remaining armies available in numberOfArmies
+        numberOfArmies = placeArmiesOnRoutes(takeoverPlan,numberOfArmies);
+
     }
     
     // attack!
@@ -237,6 +243,74 @@ public class Viking implements LuxAgent
     /*
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
+    
+    // called by placeArmies() and placeInitialArmies()
+    // given a number of armies and a set of paths to take over, this function calculates the number of armies required to do so
+    // and places them appropriately at the starting country of each path
+    // it then returns the number of armies leftover
+    protected int placeArmiesOnRoutes(ArrayList<int[]> plan, int numberOfArmies) {
+        testChat("placeArmiesOnRoutes", "----- Place Armies On Routes -----");
+        
+        int cost = 0;
+        for (int i=0; i<plan.size(); i++) {
+            if (countries[plan.get(i)[0]].getOwner() == ID) {
+                // calculatePathCost() returns the number of armies it will take to conquer this path
+                // not accounting for how many armies we have on the starting country
+                cost = calculateCladeCost(plan, i);
+                
+                chatCountryNames("placeArmiesOnRoutes", plan.get(i));
+                testChat("placeArmiesOnRoutes","Cost to take over the above path: " + cost);
+                
+                // then place cost on the starting country of the path here
+                
+                // and subtract cost from numberOfArmies
+            }
+        }
+        
+//        testChat("placeArmiesOnRoutes", "Total cost to takeover Continent: " + totalCost);
+
+        return numberOfArmies;
+    }
+    
+    // calculates the cost of taking over a clade
+    // a clade is a monophyletic tree of paths, i.e. a path and all of its forks (and all of their forks, etc.)
+    // clades are not represented in our code as single objects, so this function must find the forks of the initial path itself
+    // the function is passed an entire takeover plan ("plan"), which may contain multiple clades, and an index, which tells it which original path in the plan to work on
+    // it follows that original path only, and finds all of its forks, and calls itself recursively to find all of its forks' forks, etc.
+    // and adds up all of their costs together and returns that number
+    protected int calculateCladeCost(ArrayList<int[]> plan, int index) {
+        int cost = 0;
+        int[] originalPath = plan.get(index);
+        cost += calculatePathCost(originalPath);
+        //for (int i=1 i<originalPlan.length; i++) {
+        //  for (int j=0; j<plan.size(); j++) {
+        //      if (originalPlan[i] == plan.get(j)[0]) {
+        //          cost += calculateCladeCost(plan, j);
+        //      }
+        //  }
+        //}
+        
+        return cost;
+    }
+    
+    // calculate the number of armies it will require to take over a whole path (not including the starting country, which we assume we own)
+    // does not subtract the number of armies we already have on the first country in the path
+    // THIS FUNCTION HAS NOT BEEN TESTED YET
+    protected int calculatePathCost(int[] path) {
+        // note that "cost" in this function is not simply the number of enemy armies in the way
+        // rather, it is an estimate of how many armies it will actually take to conquer the given path
+        float cost = 0;
+        for (int i=1; i<path.length; i++) { // loop through the path, beginning on the SECOND country
+            cost += countries[path[i]].getArmies(); // add enemy armies to the cost
+        }
+        // here comes the subjective part
+        // cost so far contains just the number of enemy armies
+        // but this number isn't enough to ensure a successful takeover, so we will add a buffer
+        cost *= 1.1;
+        cost += path.length - 1;
+
+        return (int) Math.ceil(cost);
+    }
     
     // will return a set of all possible terminal attack paths from a country (optionally supplied by passing startCountry)
     // if startCountry is not provided, will find paths from all the starting countries we own in the countryList
@@ -454,7 +528,7 @@ public class Viking implements LuxAgent
     // called in the placeArmies() and placeInitialArmies() phases
     // given that the bot has already chosen a continent (or abstract area) to pursue, this function should find a comprehensive plan
     // to takeover that continent/area in the form of a set of int[] arrays of country codes that form attack paths from countries we own
-    // calls getAreaTakeoverPaths() to get a list of all possible takeover paths (allPaths) through a given country list (area)
+    // this function calls getAreaTakeoverPaths() to get a list of all possible takeover paths (allPaths) through a given country list (area)
     // then finds a comprehensive set of paths that pass through every enemy country in the area, including forks and islands
     // ideally, it will find as few as possible that contain every enemy country in the area
     protected ArrayList pickBestTakeoverPaths(int[] area) {
@@ -578,12 +652,6 @@ public class Viking implements LuxAgent
                 longestPaths.add(paths.get(i));
             }
         }
-        
-        // display the whole list for testing purposes:
-        //        for (int i=0; i<paths.size(); i++) {
-        //            String[] countryNames = getCountryNames(paths.get(i));
-        //            testChat("pickBestTakeoverPaths", Arrays.toString(paths.get(i)));
-        //        }
         
         // pick a path that ends in a border, if there is one
         size = longestPaths.size();
