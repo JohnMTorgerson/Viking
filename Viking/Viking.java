@@ -72,11 +72,12 @@ public class Viking implements LuxAgent
             "moveArmiesIn",
             
 //            "continentFitness",
-            "getAreaTakeoverPaths",
+//            "getAreaTakeoverPaths",
 //            "findAreaPaths",
 //            "pickBestTakeoverPaths",
 //            "getCheapestRouteToArea",
             "placeArmiesOnRoutes",
+            "calculateCladeCost",
             "nothing"
         };
         
@@ -142,19 +143,21 @@ public class Viking implements LuxAgent
         // placing an army on each one until we're out
         // eventually we'll place the armies intelligently, in just the amounts needed to attack the whole route
         // but for now this will do
-        while (numberOfArmies > 0) {
-            for (int i=0; i<takeoverPlan.size(); i++) {
-                int startCountry = takeoverPlan.get(i)[0];
-                if (countries[startCountry].getOwner() == ID && numberOfArmies > 0) {
-                    board.placeArmies(1, startCountry);
-                    numberOfArmies -= 1;
-                }
-            }
-        }
+//        while (numberOfArmies > 0) {
+//            for (int i=0; i<takeoverPlan.size(); i++) {
+//                int startCountry = takeoverPlan.get(i)[0];
+//                if (countries[startCountry].getOwner() == ID && numberOfArmies > 0) {
+//                    board.placeArmies(1, startCountry);
+//                    numberOfArmies -= 1;
+//                }
+//            }
+//        }
         
         // place only the number of armies needed to takeover the continent on the starting countries of all the paths
         // store any remaining armies available in numberOfArmies
         numberOfArmies = placeArmiesOnRoutes(takeoverPlan,numberOfArmies);
+        
+        testChat("placeArmies", "Number of armies left after placing on continent: " + numberOfArmies);
 
     }
     
@@ -251,26 +254,62 @@ public class Viking implements LuxAgent
     protected int placeArmiesOnRoutes(ArrayList<int[]> plan, int numberOfArmies) {
         testChat("placeArmiesOnRoutes", "----- Place Armies On Routes -----");
         
-        int cost = 0;
-        for (int i=0; i<plan.size(); i++) {
-            if (countries[plan.get(i)[0]].getOwner() == ID) {
+        // we need an associative array to remember the costs we calculate for each path
+        // so that in case any paths share a starting country, we don't double count what we've already put there
+        Map<Integer, Integer> previousCosts = new HashMap<Integer, Integer>();
+        
+        for (int i=0; i<plan.size(); i++) { // loop through the entire plan
+            int startCountry = plan.get(i)[0]; // the first country on the path we're on
+            if (countries[startCountry].getOwner() == ID) { // if we own the starting country, it is an original path, so test it; otherwise, it is a fork-branch, so ignore it at this stage
                 // calculateCladeCost() returns the number of armies it will take to conquer this path and all of its forks
                 // not accounting for how many armies we have on the starting country
-                cost = calculateCladeCost(plan, i);
+                int cost = calculateCladeCost(plan, i);
                 
-                chatCountryNames("placeArmiesOnRoutes", plan.get(i));
-                testChat("placeArmiesOnRoutes","Cost to take over the above path: " + cost);
+                testChat("placeArmiesOnRoutes","--- total cost of above clade: " + cost);
                 
-                // subtract the number of armies on the starting country from cost
+                // subtract the number of armies already on the starting country (minus 1) from cost
+                // not including any armies we may have placed or reserved there on previous iterations of the loop
+                // unless that number would be < 0, in which case, make it 0, because we don't want to try to place negative armies
+                int extantArmies = countries[startCountry].getArmies() - 1; // armies actually on the country - 1
+                int reservedArmies = 0;
+                if (previousCosts.get(startCountry) != null) {
+                    reservedArmies = previousCosts.get(startCountry); // total costs we calculated we needed for that country on previous iterations (including any armies that were already there at the beginning)
+                }
+                int discountArmies = extantArmies - reservedArmies; // armies to discount are the armies on the country minus any armies we've already reserved there
+                int armiesToPlace = Math.max(0,cost - discountArmies); // subtract discountArmies from cost, but if that's negative, make it 0
                 
-                // if cost is still positive, place cost on the starting country of the path here
+                // armiesToPlace should not be greater than numberOfArmies
+                armiesToPlace = Math.min(numberOfArmies, armiesToPlace);
                 
-                // and subtract cost from numberOfArmies
+                testChat("placeArmiesOnRoutes","extantArmies: " + extantArmies + "\n                  reservedArmies: " + reservedArmies + "\n                  discountArmies: " + discountArmies);
+                testChat("placeArmiesOnRoutes","--- amount we're actually putting on it: " + armiesToPlace);
+                
+                // place armiesToPlace on the starting country of the path
+                // and subtract armiesToPlace from numberOfArmies
+                // if it is <= 0, we already have enough armies there, so we don't need to place any
+                board.placeArmies(armiesToPlace, startCountry);
+                numberOfArmies -= armiesToPlace;
+                    
+                // if numberOfArmies is <= 0, we've used up all the armies, so break the loop, we're done
+                if (numberOfArmies <= 0) {
+                    break;
+                }
+                
+                // add the cost we calculated (NOT the adjusted figure, armiesToPlace) to the previousCosts hashmap entry for startCountry
+                // so that future iterations of the loop can check it
+                // this acts as a sort of "reservation", so that when future iterations of the loop
+                // (in the case of forks that leave from the same starting country) adjust their costs to the extant armies
+                // they don't count the ones we just placed there
+                if (previousCosts.get(startCountry) == null) {
+                    previousCosts.put(startCountry, cost);
+                } else {
+                    previousCosts.put(startCountry, previousCosts.get(startCountry) + cost);
+                }
+
             }
         }
-        
-//        testChat("placeArmiesOnRoutes", "Total cost to takeover Continent: " + totalCost);
 
+        // return the number of armies we have left
         return numberOfArmies;
     }
     
@@ -284,13 +323,17 @@ public class Viking implements LuxAgent
         int cost = 0;
         int[] path = plan.get(index);
         cost += calculatePathCost(path); // calculate the cost of the main path
-        //for (int i=1 i<path.length; i++) { loop through the main path to check to see if each country is a branch point for a fork
-        //  for (int j=0; j<plan.size(); j++) { // loop through the rest of the paths in the plan to find any that begin at this country
-        //      if (path[i] == plan.get(j)[0]) { // if one does, it is a fork
-        //          cost += calculateCladeCost(plan, j); // so recurse, and add that result to the cost
-        //      }
-        //  }
-        //}
+        
+        chatCountryNames("calculateCladeCost", path);
+        testChat("calculateCladeCost","Cost to take over the above path: " + cost);
+        
+        for (int i=1; i<path.length; i++) { // loop through the main path to check to see if each country is a branch point for a fork
+            for (int j=0; j<plan.size(); j++) { // loop through the rest of the paths in the plan to find any that begin at this country
+                if (path[i] == plan.get(j)[0]) { // if one does, it is a fork
+                    cost += calculateCladeCost(plan, j); // so recurse, and add that result to the cost
+                }
+            }
+        }
         
         return cost;
     }
@@ -313,6 +356,41 @@ public class Viking implements LuxAgent
         cost += path.length - 1; // add 1 additional army for each country in the path, since we always have to leave 1 behind as we attack
 
         return (int) Math.ceil(cost); // round UP to the nearest integer and return
+    }
+    
+    // note: I wrote the following ugly crap intending to make use of it in the placeArmiesOnRoutes() function
+    //       but decided to go another way. I'll leave it here in case it's needed later (god, I hope not)
+    //
+    // given an entire takeover plan (plan) and the index of a single path within it,
+    // returns true if the starting country of that path is not found in any other path,
+    // EXCEPT if it is the first of multiple original paths that share the same starting country
+    // in other words, it should return true for every path that is not a fork-branch of another path
+    // but since some paths fork from their first element, in which case there would be multiple paths starting from the same country (which we should already own),
+    // we call the first one of those we come across an original path (true), and the following ones we call forks (false)
+    protected boolean isOriginalPath(ArrayList<int[]> plan, int index) {
+        int startCountry = plan.get(index)[0]; // the starting country of the path we're testing
+        
+        for (int i=0; i<plan.size(); i++) { // loop through the entire plan
+            if (i != index) { // don't check against the path we're testing
+                int[] checkPath = plan.get(i);
+                for (int j=0; j<checkPath.length; j++) { // loop through the path
+                    if (checkPath[j] == startCountry) { // if we found startCountry in this path
+                        // if the match occurs at the beginning of a path that appears after the path we're testing
+                        // then that match doesn't count. the reason for this is that in the case of forks that happen
+                        // at the beginning of a pair (or more) of paths, we need to treat one of them as the original,
+                        // and the rest as forks; we've chosen to treat the first one as the original in that case.
+                        // so the following if-statement rules out the first one by only returning false if the match we found
+                        // occurs either in the middle of a path or at the beginning of a PRIOR path only, and NOT at the beginning of a subsequent path
+                        if (j!=0 || i < index) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // if we're here, we didn't find anything, so it's an original path; return true
+        return true;
     }
     
     // will return a set of all possible terminal attack paths from a country (optionally supplied by passing startCountry)
