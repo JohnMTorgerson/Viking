@@ -114,51 +114,41 @@ public class Viking implements LuxAgent
         testChat("placeArmies", "*********** PLACE ARMIES ***********");
         
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
-        
         int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
 //        int[] bestContList = new int[] { 3,14,5 }; // interesting continents in U.S.S. Lionhart map
-        // pick the best continent that we don't already own:
-        int goalCont = -1;
-        for (int i=0; i<bestContList.length; i++) { // loop through continents from best to worst
-            // as soon as we find one that we don't own, pick it and stop looking
-            if (BoardHelper.playerOwnsContinent(ID, bestContList[i], countries) == false) {
-                goalCont = bestContList[i];
+        
+        // next, loop through the continents from best to worst
+        // adding just enough armies to each continent to take it over completely
+        // until we're out of armies to place
+        for (int i=0; i<bestContList.length; i++) {
+            // first check if we're out of armies, and if we are, stop trying to place them
+            if (numberOfArmies <= 0) {
                 break;
             }
+            
+            // if we don't already own the continent, place armies on it
+            if (BoardHelper.playerOwnsContinent(ID, bestContList[i], countries) == false) {
+                int goalCont = bestContList[i];
+            
+                testChat("placeArmies","goalCont: " + board.getContinentName(goalCont));
+                
+                // next we need to pick the right countries to place our armies on in order to take over the continent
+                // the pickBestTakeoverPaths function will simulate taking over the continent
+                // from multiple countries and give us back the best set of paths to do so
+                // the first country in each path (or route) is the one we want to place our armies on
+                int[] goalContCountries = getCountriesInContinent(goalCont, countries); // put all the countries from the goal cont into an integer array to pass to the getAreaTakeoverPaths function
+                takeoverPlan = pickBestTakeoverPaths(goalContCountries); // get the best paths to take over the goalCont; takeoverPlan is a global ArrayList<int[]> variable
+                
+                testChat("placeArmies", "Paths we picked: ");
+                chatCountryNames("placeArmies", takeoverPlan);
+                
+                // place only the number of armies needed to takeover the continent on the starting countries of all the paths
+                // store any remaining armies available in numberOfArmies
+                numberOfArmies = placeArmiesOnRoutes(takeoverPlan,numberOfArmies);
+                
+                testChat("placeArmies", "Number of armies left after placing on continent: " + numberOfArmies);
+            }
         }
-        
-        testChat("placeArmies","goalCont: " + board.getContinentName(goalCont));
-        
-        // next we need to pick a country to place our armies on in order to take over the continent
-        // the pickBestTakeoverPaths function will simulate taking over the continent
-        // from multiple countries and give us back the best set of paths to do so
-        // the first country in each path (or route) is the one we want to place our armies on
-        int[] goalContCountries = getCountriesInContinent(goalCont, countries); // put all the countries from the goal cont into an integer array to pass to the getAreaTakeoverPaths function
-        takeoverPlan = pickBestTakeoverPaths(goalContCountries); // get the best paths to take over the goalCont; takeoverPlan is a global ArrayList<int[]> variable
-        
-        testChat("placeArmies", "Paths we picked: ");
-        chatCountryNames("placeArmies", takeoverPlan);
-        
-        // loop through the starting country of each path,
-        // placing an army on each one until we're out
-        // eventually we'll place the armies intelligently, in just the amounts needed to attack the whole route
-        // but for now this will do
-//        while (numberOfArmies > 0) {
-//            for (int i=0; i<takeoverPlan.size(); i++) {
-//                int startCountry = takeoverPlan.get(i)[0];
-//                if (countries[startCountry].getOwner() == ID && numberOfArmies > 0) {
-//                    board.placeArmies(1, startCountry);
-//                    numberOfArmies -= 1;
-//                }
-//            }
-//        }
-        
-        // place only the number of armies needed to takeover the continent on the starting countries of all the paths
-        // store any remaining armies available in numberOfArmies
-        numberOfArmies = placeArmiesOnRoutes(takeoverPlan,numberOfArmies);
-        
-        testChat("placeArmies", "Number of armies left after placing on continent: " + numberOfArmies);
-
     }
     
     // attack!
@@ -179,16 +169,20 @@ public class Viking implements LuxAgent
                 // loop through the whole route, attacking as we go
                 for(int j=0; j<attackRoute.length-1; j++) {
                     
+                    testChat("attackPhase", "Calculating forks from this country...");
+                    
                     // at each step of the path, before we actually attack
                     // we test for forks. if we find a branch point from this country
                     // then we have to tell moveArmiesIn() to leave some armies behind
                     // in order to take over the fork later from this point
-                    forkArmies = 1; // forkArmies is a global variable, which tells moveArmiesIn() to leave some of its armies behind
+                    forkArmies = 0; // forkArmies is a global variable, which tells moveArmiesIn() how many armies to leave behind behind
                     for (int k=i+1; k<takeoverPlan.size(); k++) { // loop through only the rest of the takeoverPlan paths (i.e. the ones we haven't attacked yet) to check for branch points
                         if (attackRoute[j] == takeoverPlan.get(k)[0]) {
-                            forkArmies += 1; // increment forkArmies every time we find a different path that branches from this country
+                            forkArmies += calculateCladeCost(takeoverPlan, k); // calculate cost of any clades that fork from this point, and add them all to forkArmies
                         }
                     }
+                    
+                    if (forkArmies == 0) { testChat("attackPhase", "No forks from this country"); }
                     
                     // now we attack
                     if (countries[attackRoute[j]].getArmies() > 1) { // if we have > 1 army in the attacking country
@@ -208,16 +202,15 @@ public class Viking implements LuxAgent
     {
         // for now, we're always moving everything into the conquered country
         // unless the country we just attacked from is a branch point for one or more forks
-        // in which case we will only move a corresponding fraction of the armies
-        // so far this does not take into account the armies that are actually needed for each fork
-        // it just divides them up evenly so each fork gets the same amount
+        // in which case we will leave behind as many as we have calculated are necessary to take over those forks
+        // and move the rest
         
         testChat("moveArmiesIn", "*********** MOVE ARMIES IN ***********");
         
         int armiesOnFrom = countries[cca].getArmies() - 1; // number of armies on the country we just attacked from
-        int amountToMove = armiesOnFrom / forkArmies; // move number of armies on the country divided by the number of paths it forks into
+        int amountToMove = Math.max(0, armiesOnFrom - forkArmies); // move number of armies on the country minus the cost of the paths it forks into, or 0, whichever is greater
         
-        testChat("moveArmiesIn", "Attacking country: " + countries[cca].getName() + "\nArmies on attacking country: " + armiesOnFrom + "\nNumber of forks: " + forkArmies + "\nAmount to move: " + amountToMove);
+        testChat("moveArmiesIn", "Attacking country: " + countries[cca].getName() + "\nArmies on attacking country after attacking (minus one): " + armiesOnFrom + "\nCost of forks: " + forkArmies + "\nCountry to move into: " + countries[ccd].getName() + "\nAmount to move: " + amountToMove);
         
         return amountToMove;
     }
