@@ -113,9 +113,12 @@ public class Viking implements LuxAgent
     public void placeArmies( int numberOfArmies ) {
         testChat("placeArmies", "*********** PLACE ARMIES ***********");
         
+        // empty takeoverPlan of any info from previous turn
+        takeoverPlan.clear();
+        
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
         int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
-//        int[] bestContList = new int[] { 3,14,5 }; // interesting continents in U.S.S. Lionhart map
+//        bestContList = new int[] { 3,14,5 }; // interesting continents in U.S.S. Lionhart map
         
         // next, loop through the continents from best to worst
         // adding just enough armies to each continent to take it over completely
@@ -137,7 +140,17 @@ public class Viking implements LuxAgent
                 // from multiple countries and give us back the best set of paths to do so
                 // the first country in each path (or route) is the one we want to place our armies on
                 int[] goalContCountries = getCountriesInContinent(goalCont, countries); // put all the countries from the goal cont into an integer array to pass to the getAreaTakeoverPaths function
-                takeoverPlan = pickBestTakeoverPaths(goalContCountries); // get the best paths to take over the goalCont; takeoverPlan is a global ArrayList<int[]> variable
+                ArrayList<int[]> thisContPlan = pickBestTakeoverPaths(goalContCountries); // get the best paths to take over the goalCont
+                
+                // now check all the paths in our new continent against all the paths already in takeoverPlan (from other continents)
+                // to see if they collide; if they do, trim the new path so that it will be treated like a fork
+                // this will only happen if there was an earlier continent that we didn't own any countries in,
+                // which we had to get to first, in which case, some countries from THIS continent might already be in some paths in takeoverPlan
+                // there are some cases that this fix does not solve, but they should be reasonably rare
+                for (int j=0; j<thisContPlan.size(); j++) {
+                    int[] trimmedPath = trimFork(takeoverPlan, thisContPlan.get(j));
+                    takeoverPlan.add(trimmedPath);
+                }
                 
                 testChat("placeArmies", "Paths we picked: ");
                 chatCountryNames("placeArmies", takeoverPlan);
@@ -631,23 +644,9 @@ public class Viking implements LuxAgent
             // find the best single path from the pruned list of paths to check
             int[] newPath = findBestSingleTakeoverPath(checkPaths, area); // see findBestSingleTakeoverPath() for the criteria we use to pick the best path
             
-            // now we search for a common element with any of the paths we've already chosen
-            // if we find one, this will be a branch point (fork), so we'll truncate everything from the new path before the branch point
-            int newStart = 0;
-            newPathLoop: for (int i=newPath.length-1; i>=0; i--) { // iterate backwards through newPath
-                for (int[] resultsPath : results) { // loop through all the paths we've already picked
-                    for (int resultsCountry : resultsPath) { // loop through this path we've already picked
-                        if (newPath[i] == resultsCountry) { // if this country in newPath is in one of the old paths
-                            newStart = i; // store the index
-                            break newPathLoop; // quit searching
-                        }
-                    }
-                }
-            }
-            // now truncate the beginning of newPath
-            // if we didn't find a branch point, it will not be affected
-            int[] newPathCut = new int[newPath.length - newStart]; // make new array of appropriate length
-            System.arraycopy(newPath, newStart, newPathCut, 0, newPathCut.length); // copy end of newPath into it
+            // check newPath against all the paths in results to see if it should be a fork of any of them
+            // if it should, trim the beginning of the path so that its first element is the branch point
+            int[] newPathCut = trimFork(results, newPath);
             
             testChat("pickBestTakeoverPaths", "-- New path uncut, then cut: ");
             chatCountryNames("pickBestTakeoverPaths", newPath);
@@ -703,6 +702,29 @@ public class Viking implements LuxAgent
         }
 
         return results;
+    }
+    
+    protected int[] trimFork(ArrayList<int[]> checkPlan, int[] pathToTrim) {
+    
+        // now we search for a common element with any of the paths we've already chosen
+        // if we find one, this will be a branch point (fork), so we'll truncate everything from the new path before the branch point
+        int newStart = 0;
+        iLoop: for (int i=pathToTrim.length-1; i>=0; i--) { // iterate backwards through pathToTrim
+            for (int[] checkPlanPath : checkPlan) { // loop through all the paths we've already picked
+                for (int checkPlanCountry : checkPlanPath) { // loop through this path we've already picked
+                    if (pathToTrim[i] == checkPlanCountry) { // if this country in pathToTrim is in one of the old paths
+                        newStart = i; // store the index
+                        break iLoop; // quit searching
+                    }
+                }
+            }
+        }
+        // now truncate the beginning of pathToTrim
+        // if we didn't find a branch point, it will not be affected
+        int[] trimmed = new int[pathToTrim.length - newStart]; // make new array of appropriate length
+        System.arraycopy(pathToTrim, newStart, trimmed, 0, trimmed.length); // copy end of pathToTrim into it
+        
+        return trimmed;
     }
     
     // given a list of takeover paths, pick the longest one
