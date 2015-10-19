@@ -28,15 +28,20 @@ public class Viking implements LuxAgent
     protected ArrayList<int[]> takeoverPlan;
     
     // a global variable which tells moveArmiesIn() to leave some of its armies behind
-    // after successfully attacking a country. attackPhase() will set this to the number of forks
-    // that split off from that point when it attacks through the branch point of a fork
+    // after successfully attacking a country. attackPhase() will calculate this number
     // so that moveArmiesIn() will know how many armies to leave behind
-    protected int forkArmies;
+    protected int leaveArmies;
+    
+    // will store the number of armies we want to put on a border country
+    // key: country code
+    // value: number of armies
+    protected Map<Integer, Integer> borderArmies;
     
     public Viking()
     {
         rand = new Random();
         takeoverPlan = new ArrayList<int[]>();
+        borderArmies = new HashMap<Integer, Integer>();
     }
     
     // Save references
@@ -130,7 +135,7 @@ public class Viking implements LuxAgent
             }
             
             // if we don't already own the continent, place armies on it
-            if (BoardHelper.playerOwnsContinent(ID, bestContList[i], countries) == false) {
+            //if (BoardHelper.playerOwnsContinent(ID, bestContList[i], countries) == false) {
                 int goalCont = bestContList[i];
             
                 testChat("placeArmies","goalCont: " + board.getContinentName(goalCont));
@@ -155,13 +160,22 @@ public class Viking implements LuxAgent
                 testChat("placeArmies", "Paths we picked: ");
                 chatCountryNames("placeArmies", takeoverPlan);
                 
+                calculateBorderStrength(goalContCountries);
+                
                 // place only the number of armies needed to takeover the continent on the starting countries of all the paths
                 // store any remaining armies available in numberOfArmies
                 numberOfArmies = placeArmiesOnRoutes(takeoverPlan,numberOfArmies);
                 
                 testChat("placeArmies", "Number of armies left after placing on continent: " + numberOfArmies);
-            }
+            //}
         }
+        
+        testChat("placeArmies", "Border countries for all continents:");
+        ArrayList<Integer> borderCountries = new ArrayList<Integer>();
+        for (int key : borderArmies.keySet()) {
+            borderCountries.add(key);
+        }
+        chatCountryNames("placeArmies",borderCountries);
     }
     
     // attack!
@@ -188,7 +202,7 @@ public class Viking implements LuxAgent
                     // we test for forks. if we find a branch point from this country
                     // then we have to tell moveArmiesIn() to leave some armies behind
                     // in order to take over the fork later from this point
-                    forkArmies = 0; // forkArmies is a global variable, which tells moveArmiesIn() how many armies to leave behind behind
+                    int forkArmies = 0; // how many armies we want to leave behind to use for any forks from this country
                     for (int k=i+1; k<takeoverPlan.size(); k++) { // loop through only the rest of the takeoverPlan paths (i.e. the ones we haven't attacked yet) to check for branch points
                         if (attackRoute[j] == takeoverPlan.get(k)[0]) {
                             forkArmies += calculateCladeCost(takeoverPlan, k); // calculate cost of any clades that fork from this point, and add them all to forkArmies
@@ -196,6 +210,15 @@ public class Viking implements LuxAgent
                     }
                     
                     if (forkArmies == 0) { testChat("attackPhase", "No forks from this country"); }
+                    
+                    // find out if we want to leave any armies on this country as a border garrison
+                    int garrisonArmies = findBorderCost(attackRoute[j]);
+                    
+                    // leaveArmies is a global variable
+                    // this is how many armies we want to leave on the attacking country
+                    // both for forking from that country and to leave there as a border garrison
+                    // moveArmiesIn() will use this variable to do that
+                    leaveArmies = forkArmies + garrisonArmies;
                     
                     // now we attack
                     if (countries[attackRoute[j]].getArmies() > 1) { // if we have > 1 army in the attacking country
@@ -214,16 +237,17 @@ public class Viking implements LuxAgent
     public int moveArmiesIn( int cca, int ccd)
     {
         // for now, we're always moving everything into the conquered country
-        // unless the country we just attacked from is a branch point for one or more forks
-        // in which case we will leave behind as many as we have calculated are necessary to take over those forks
+        // unless the country we just attacked from is either a branch point for one or more forks
+        // or is a border country that we want to leave some armies on as a garrison
+        // in which case we will leave behind as many as we have calculated are necessary for both those purposes
         // and move the rest
         
         testChat("moveArmiesIn", "*********** MOVE ARMIES IN ***********");
         
         int armiesOnFrom = countries[cca].getArmies() - 1; // number of armies on the country we just attacked from
-        int amountToMove = Math.max(0, armiesOnFrom - forkArmies); // move number of armies on the country minus the cost of the paths it forks into, or 0, whichever is greater
+        int amountToMove = Math.max(0, armiesOnFrom - leaveArmies); // move number of armies on the country minus leaveArmies
         
-        testChat("moveArmiesIn", "Attacking country: " + countries[cca].getName() + "\nArmies on attacking country after attacking (minus one): " + armiesOnFrom + "\nCost of forks: " + forkArmies + "\nCountry to move into: " + countries[ccd].getName() + "\nAmount to move: " + amountToMove);
+        testChat("moveArmiesIn", "Attacking country: " + countries[cca].getName() + "\nArmies on attacking country after attacking (minus one): " + armiesOnFrom + "\nCost of forks/garrison: " + leaveArmies + "\nCountry to move into: " + countries[ccd].getName() + "\nAmount to move: " + amountToMove);
         
         return amountToMove;
     }
@@ -253,6 +277,18 @@ public class Viking implements LuxAgent
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
     
+    // called by placeArmies(), figures out how many armies to put on each border country of the given area
+    // stores the number of armies it calculates for each country in the global hashmap borderArmies
+    // does NOT actually place those armies on the countries
+    // later this will be smarter, but for now, we're just putting 5 on everything
+    protected void calculateBorderStrength(int[] area) {
+        for (int country : area) {
+            if (isAreaBorder(country, area)) {
+                borderArmies.put(country, 5);
+            }
+        }
+    }
+    
     // called by placeArmies() and placeInitialArmies()
     // given a number of armies and a set of paths to take over, this function calculates the number of armies required to do so
     // and places them appropriately at the starting country of each path
@@ -273,6 +309,13 @@ public class Viking implements LuxAgent
                 
                 testChat("placeArmiesOnRoutes","--- total cost of above clade: " + cost);
                 
+                // find out if startCountry is a border country, and if so, find out how much we want to place there as we pass
+                // we will place this number on the country but will NOT add it to costs, so that it will not be added to reservedArmies
+                // on future iterations of the loop, essentially ensuring that it will only be added to startCountry once
+                // even if there are multiple paths starting from the same country
+                // (findBorderCost() is also run on every other country in the path and its forks when we calculate the cost for it)
+                int borderGarrison = findBorderCost(startCountry);
+                
                 // subtract the number of armies already on the starting country (minus 1) from cost
                 // not including any armies we may have placed or reserved there on previous iterations of the loop
                 // unless that number would be < 0, in which case, make it 0, because we don't want to try to place negative armies
@@ -282,12 +325,12 @@ public class Viking implements LuxAgent
                     reservedArmies = previousCosts.get(startCountry); // total costs we calculated we needed for that country on previous iterations (including any armies that were already there at the beginning)
                 }
                 int discountArmies = extantArmies - reservedArmies; // armies to discount are the armies on the country minus any armies we've already reserved there
-                int armiesToPlace = Math.max(0,cost - discountArmies); // subtract discountArmies from cost, but if that's negative, make it 0
+                int armiesToPlace = Math.max(0,cost + borderGarrison - discountArmies); // subtract discountArmies from cost, but if that's negative, make it 0
                 
                 // armiesToPlace should not be greater than numberOfArmies
                 armiesToPlace = Math.min(numberOfArmies, armiesToPlace);
                 
-                testChat("placeArmiesOnRoutes","extantArmies: " + extantArmies + "\n                  reservedArmies: " + reservedArmies + "\n                  discountArmies: " + discountArmies);
+                testChat("placeArmiesOnRoutes","extantArmies: " + extantArmies + "\n                  reservedArmies: " + reservedArmies + "\n                  discountArmies: " + discountArmies + "\n                  Border garrison: " + borderGarrison);
                 testChat("placeArmiesOnRoutes","--- amount we're actually putting on it: " + armiesToPlace);
                 
                 // place armiesToPlace on the starting country of the path
@@ -329,6 +372,7 @@ public class Viking implements LuxAgent
         int cost = 0;
         int[] path = plan.get(index);
         cost += calculatePathCost(path); // calculate the cost of the main path
+        //remove plan[index]
         
         chatCountryNames("calculateCladeCost", path);
         testChat("calculateCladeCost","Cost to take over the above path: " + cost);
@@ -353,6 +397,7 @@ public class Viking implements LuxAgent
         float cost = 0;
         for (int i=1; i<path.length; i++) { // loop through the path, beginning on the SECOND country
             cost += countries[path[i]].getArmies(); // add enemy armies to the cost
+            cost += findBorderCost(path[i]); // check if we want to leave any armies on this country as a border garrison, add that value to cost
         }
         
         // here comes the subjective part
@@ -362,6 +407,15 @@ public class Viking implements LuxAgent
         cost += path.length - 1; // add 1 additional army for each country in the path, since we always have to leave 1 behind as we attack
 
         return (int) Math.ceil(cost); // round UP to the nearest integer and return
+    }
+    
+    // checks if country is in borderArmies hashmap, and if it is, returns the value, if not, returns 0
+    // i.e. if the country is a border, this function will return the number of armies we intend to put/leave on it as a garrison
+    protected int findBorderCost(int country) {
+        if (borderArmies.get(country) != null) {
+            return borderArmies.get(country);
+        }
+        return 0;
     }
     
     // note: I wrote the following ugly crap intending to make use of it in the placeArmiesOnRoutes() function
@@ -485,7 +539,16 @@ public class Viking implements LuxAgent
         } else {
             testChat("getAreaTakeoverPaths", "all countries were accounted for in the list of paths we found");
         }
-
+        
+        // now we will add single-country paths for each country we own
+        // these aren't terminal paths, of course; they're kind of dummy paths
+        // they will be added to the takeoverPlan, from which the border countries among them will be armed
+        // by treating the border countries as paths, we harness a lot of existing logic for placing armies
+        for (int country : countryList) {
+            if (countries[country].getOwner() == ID) {
+                paths.add(new int[]{country});
+            }
+        }
         
         testChat("getAreaTakeoverPaths", "There are " + paths.size() + " terminal paths");
         
@@ -617,16 +680,16 @@ public class Viking implements LuxAgent
     // to takeover that continent/area in the form of a set of int[] arrays of country codes that form attack paths from countries we own
     // this function calls getAreaTakeoverPaths() to get a list of all possible takeover paths (allPaths) through a given country list (area)
     // then finds a comprehensive set of paths that pass through every enemy country in the area, including forks and islands
-    // ideally, it will find as few as possible that contain every enemy country in the area
+    // ideally, it will find as few as possible that contain every enemy country in the area (as well as every country we own, even if that means a dummy path of only 1 country)
+    // getAreaTakeoverPaths() adds 1-element-long single-country paths for each country we own in the area, and this function will pick all of those whose country isn't in one of the other paths it picks
+    // this is useful in the place armies phase, because those paths are used to arm the border countries
     protected ArrayList pickBestTakeoverPaths(int[] area) {
         ArrayList<int[]> checkPaths = getAreaTakeoverPaths(area); // first, get comprehensive list of paths; this could be thousands of elements long in large cases
         ArrayList<int[]> results = new ArrayList<int[]>(); // this will hold the results, which could be several paths, to include forks and islands
         ArrayList<Integer> countriesLeft = new ArrayList<Integer>(); // list of countries not in any paths we've chosen so far
-        // initially populate countriesLeft with every country in area that we don't own
+        // initially populate countriesLeft with every country in area
         for (int i=0; i<area.length; i++) {
-            if (countries[area[i]].getOwner() != ID) {
                 countriesLeft.add(area[i]);
-            }
         }
         
         testChat("pickBestTakeoverPaths", "-- PICK BEST TAKEOVER PATHS --");
