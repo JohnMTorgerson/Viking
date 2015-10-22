@@ -19,6 +19,7 @@ public class Viking implements LuxAgent
     // Store some refs the board and to the country array
     protected Board board;
     protected Country[] countries;
+    protected int numConts;
     
     // It might be useful to have a random number generator
     protected Random rand;
@@ -51,6 +52,7 @@ public class Viking implements LuxAgent
         
         board = theboard;
         countries = board.getCountries();
+        numConts = board.getNumberOfContinents();
 
     }
     
@@ -71,18 +73,18 @@ public class Viking implements LuxAgent
     
     protected void testChat(String topic, String message) {
         String[] topics = {
-            "placeInitialArmies",
+//            "placeInitialArmies",
             "placeArmies",
-            "attackPhase",
-            "moveArmiesIn",
+//            "attackPhase",
+//            "moveArmiesIn",
             
 //            "continentFitness",
 //            "getAreaTakeoverPaths",
 //            "findAreaPaths",
 //            "pickBestTakeoverPaths",
 //            "getCheapestRouteToArea",
-            "placeArmiesOnRoutes",
-            "calculateCladeCost",
+//            "placeArmiesOnRoutes",
+//            "calculateCladeCost",
             "nothing"
         };
         
@@ -120,6 +122,13 @@ public class Viking implements LuxAgent
         
         // empty takeoverPlan of any info from previous turn
         takeoverPlan.clear();
+        
+        // find list of objectives to knockout enemy bonuses
+        ArrayList<HashMap> knockoutObjectiveList = findKnockoutObjectives();
+        
+        testChat("placeArmies", "--- Knockout Objectives: ---");
+        chatObjectives("placeArmies", knockoutObjectiveList);
+        
         
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
         int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
@@ -277,6 +286,37 @@ public class Viking implements LuxAgent
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
     
+    // finds all continents that are completely owned and returns an arraylist containing an Objective (hashmap) for each of them
+    // Objective hashmaps for knocking out bonuses contain the cost to knock out the continent bonus, the continent bonus, the enemy's current income, an attack path to get to the continent, and where to place armies to execute the attack path
+    protected ArrayList<HashMap> findKnockoutObjectives() {
+        ArrayList<HashMap> objectiveList = new ArrayList<HashMap>();
+        
+        // loop through all the continents on the board
+        // if the continent is fully owned, find all the values we want and put them in a hashmap
+        // add the hashmap to objectiveList
+        for(int continent=0; continent<numConts; continent++) { // loop through all the continents
+            int owner = countries[BoardHelper.getCountryInContinent(continent, countries)].getOwner(); // the owner of some country in this continent
+            if (BoardHelper.anyPlayerOwnsContinent(continent, countries) && owner != ID) { // if an enemy fully owns this continent
+                HashMap<String, Object> objective = new HashMap<String, Object>(); // the Objective hashmap for this continent
+                
+                // set continent code
+                objective.put("continentID", continent);
+                
+                // set continent bonus
+                objective.put("bonus", board.getContinentBonus(continent));
+                
+                // set enemy income
+                objective.put("enemyIncome", board.getPlayerIncome(owner));
+                
+                
+                objectiveList.add(objective);
+            }
+        }
+        
+        
+        return objectiveList;
+    }
+
     // called by placeArmies(), figures out how many armies to put on each border country of the given area
     // stores the number of armies it calculates for each country in the global hashmap borderArmies
     // does NOT actually place those armies on the countries
@@ -289,7 +329,7 @@ public class Viking implements LuxAgent
         }
     }
     
-    // called by placeArmies() and placeInitialArmies()
+    // called by placeArmies()
     // given a number of armies and a set of paths to take over, this function calculates the number of armies required to do so
     // and places them appropriately at the starting country of each path
     // it then returns the number of armies leftover
@@ -423,7 +463,7 @@ public class Viking implements LuxAgent
     //
     // given an entire takeover plan (plan) and the index of a single path within it,
     // returns true if the starting country of that path is not found in any other path,
-    // EXCEPT if it is the first of multiple original paths that share the same starting country
+    // OR if it is the first of multiple original paths that share the same starting country
     // in other words, it should return true for every path that is not a fork-branch of another path
     // but since some paths fork from their first element, in which case there would be multiple paths starting from the same country (which we should already own),
     // we call the first one of those we come across an original path (true), and the following ones we call forks (false)
@@ -1043,18 +1083,16 @@ public class Viking implements LuxAgent
     }*/
     
     // takes an integer array of country codes and returns a string array of the associated country names
-    // primarily useful for testing purposes
+    // useful for testing purposes
     protected String[] getCountryNames(int[] codes) {
         int size = codes.length;
         String[] names = new String[size];
         for (int i=0; i<size; i++) {
-            names[i] = countries[codes[i]].getName();
+            names[i] = countries[codes[i]].getName().replace(",",""); // get rid of commas in country names because that's confusing when we output the whole array as a string
         }
         return names;
     }
-    
-    // THE FOLLOWING TWO FUNCTIONS HAVEN'T BEEN TESTED YET:
-    
+
     // chat a list of countries by name, given an array of country codes
     // callingFunc is simply a string to give to the testChat() function to tell it where the chatting is coming from; see testChat() for details
     // useful for testing purposes
@@ -1095,6 +1133,54 @@ public class Viking implements LuxAgent
             // then call chatCountryNames using the int[] array
             chatCountryNames(callingFunc, codesArray);
         }
+    }
+    
+    // function to chat Objectives for testing purposes
+    // objectives are hashmaps of an attack plan and other information for taking over areas or knocking out bonuses or what have you
+    protected void chatObjectives(String callingFunc, HashMap<String, Object> objective) {
+        String message = new String();
+        for (String key : objective.keySet()) {
+            Object value = objective.get(key);
+            String stringValue = objectToString(value);
+            
+            if (key == "continentID") {
+                message += "continent: " + board.getContinentName((Integer) value) + "\n";
+            } else {
+                message += key + ": " + stringValue + "\n";
+            }
+        }
+        
+        testChat(callingFunc, message);
+    }
+    // overloaded version to handle arraylists of Objectives
+    protected void chatObjectives(String callingFunc, ArrayList<HashMap> list) {
+        for (HashMap objective : list) {
+            chatObjectives(callingFunc, objective);
+        }
+    }
+    
+    // convert a number of different types to String
+    // if it can't convert that type, return null
+    // this is useful for outputting various values in testing
+    protected String objectToString(Object value) {
+        if (value instanceof String) {
+            return (String) value;
+        }
+        if (value instanceof Integer) {
+            return "" + value;
+        }
+        if (value instanceof int[]) {
+            return Arrays.toString((int[]) value);
+        }
+        if (value instanceof ArrayList) {
+            String listString = new String();
+            for (Object element : (ArrayList) value) { // loop through the list
+                listString += objectToString(element) + "\n"; // recurse on each element, converting it to a string, whatever type it is
+            }
+            return listString;
+        }
+        
+        return null;
     }
     
     // helper function to return an array of the countries a player owns in a given continent
@@ -1172,7 +1258,6 @@ public class Viking implements LuxAgent
     
     // chat out all continent codes and names
     protected void chatContinentNames() {
-        int numConts = board.getNumberOfContinents();
         for (int i=0; i<numConts; i++) {
             board.sendChat(i + " - " + board.getContinentName(i));
         }
