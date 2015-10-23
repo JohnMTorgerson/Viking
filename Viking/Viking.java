@@ -126,9 +126,20 @@ public class Viking implements LuxAgent
         // find list of objectives to knockout enemy bonuses
         ArrayList<HashMap> knockoutObjectiveList = findKnockoutObjectives();
         
-        testChat("placeArmies", "--- Knockout Objectives: ---");
+        // sort the knockout objectives by the bonus of the continent to knock out
+        sortKnockoutObjectives(knockoutObjectiveList, "bonus");
+        
+        testChat("placeArmies", "--- Sorted Knockout Objectives: --- Size: " + knockoutObjectiveList.size());
         chatObjectives("placeArmies", knockoutObjectiveList);
         
+        // for now, just add the first two to the takeoverPlan, trimming them for collisions
+        int max = Math.min(2, knockoutObjectiveList.size());
+        for (int i=0; i<max; i++) {
+            HashMap objective = knockoutObjectiveList.get(i);
+            ArrayList<int[]> objectivePlan = (ArrayList<int[]>) objective.get("plan");
+            int[] objectivePath = objectivePlan.get(0);
+            takeoverPlan.add(trimFork(takeoverPlan, objectivePath));
+        }
         
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
         int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
@@ -165,10 +176,7 @@ public class Viking implements LuxAgent
                     int[] trimmedPath = trimFork(takeoverPlan, thisContPlan.get(j));
                     takeoverPlan.add(trimmedPath);
                 }
-                
-                testChat("placeArmies", "Paths we picked: ");
-                chatCountryNames("placeArmies", takeoverPlan);
-                
+            
                 calculateBorderStrength(goalContCountries);
                 
                 // place only the number of armies needed to takeover the continent on the starting countries of all the paths
@@ -178,6 +186,9 @@ public class Viking implements LuxAgent
                 testChat("placeArmies", "Number of armies left after placing on continent: " + numberOfArmies);
             //}
         }
+        
+        testChat("placeArmies", "Paths we picked: ");
+        chatCountryNames("placeArmies", takeoverPlan);
         
         testChat("placeArmies", "Border countries for all continents:");
         ArrayList<Integer> borderCountries = new ArrayList<Integer>();
@@ -286,6 +297,37 @@ public class Viking implements LuxAgent
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
     
+    // sort in place an arraylist of knockout objectives
+    // by the value of sortKey (only if that value is an integer)
+    protected void sortKnockoutObjectives(ArrayList<HashMap> list, String sortKey) {
+        // if there's nothing in the list, or if the value we're trying to sort by is not an integer
+        // simply return the original list
+        if (list.size() == 0 || !(list.get(0).get(sortKey) instanceof Integer)) {
+            return;
+        }
+        
+        // bubble sort the arraylist by the value of sortKey
+        boolean flag = true;
+        HashMap temp = new HashMap();
+        int v1, v2;
+        int size = list.size();
+        while(flag) {
+            flag = false;
+            for (int i=0; i<size-1; i++) {
+                v1 = (Integer) list.get(i).get(sortKey);
+                v2 = (Integer) list.get(i+1).get(sortKey);
+                if (v1 < v2) {
+                    temp = list.get(i); // store the value at i
+                    list.remove(i); // remove the ith element, and everything after it shifts to the left
+                    list.add(i+1,temp); // insert the original ith element at i+1, and everything after it shifts to the right
+                    flag = true;
+                }
+            }
+        }
+
+        return;
+    }
+    
     // finds all continents that are completely owned and returns an arraylist containing an Objective (hashmap) for each of them
     // Objective hashmaps for knocking out bonuses contain the cost to knock out the continent bonus, the continent bonus, the enemy's current income, an attack path to get to the continent, and where to place armies to execute the attack path
     protected ArrayList<HashMap> findKnockoutObjectives() {
@@ -308,6 +350,17 @@ public class Viking implements LuxAgent
                 // set enemy income
                 objective.put("enemyIncome", board.getPlayerIncome(owner));
                 
+                // find and set route
+                int[] route = getCheapestRouteToCont(continent);
+                ArrayList<int[]> plan = new ArrayList<int[]>();
+                plan.add(route);
+                objective.put("plan",plan);
+                
+                // find and set cost
+                int cost = calculatePathCost(route);
+                objective.put("cost", cost);
+                
+                
                 
                 objectiveList.add(objective);
             }
@@ -316,6 +369,8 @@ public class Viking implements LuxAgent
         
         return objectiveList;
     }
+    
+    
 
     // called by placeArmies(), figures out how many armies to put on each border country of the given area
     // stores the number of armies it calculates for each country in the global hashmap borderArmies
@@ -615,7 +670,19 @@ public class Viking implements LuxAgent
         return paths;
     }
     
-    // find the nearest country owned by ID and return the cheapest path
+    // find the nearest country owned by owner and return the cheapest path
+    // from it to a country in the given continent
+    // just packages all the countries in that continent into an area and calls getCheapestRouteToArea
+    protected int[] getCheapestRouteToCont(int cont, int owner) {
+        return getCheapestRouteToArea(getCountriesInContinent(cont, countries), owner);
+    }
+    // overload getCheapestRouteToCont to allow a single parameter version
+    // if no ID is provided, assume it should be the owner
+    protected int[] getCheapestRouteToCont(int cont) {
+        return getCheapestRouteToCont(cont, ID);
+    }
+                              
+    // find the nearest country owned by owner and return the cheapest path
     // from it to a country in the given area (area could be a continent, for example)
     // this is a modified version of the BoardHelper method cheapestRouteFromOwnerToCont()
     protected int[] getCheapestRouteToArea(int[] area, int owner) {
@@ -649,7 +716,7 @@ public class Viking implements LuxAgent
         // so far:
         CountryPathStack Q = new CountryPathStack();
         
-        // We explore from all the borders of <continent>
+        // We explore from all the borders of <area>
         int testCode, armiesSoFar;
         int[] testCodeHistory;
         int[] borderCodes = getAreaBorders(area);
@@ -660,8 +727,7 @@ public class Viking implements LuxAgent
             testCodeHistory[0] = testCode;
             haveSeenAlready[testCode] = true;
             
-            Q.pushWithValueAndHistory(
-                                      countries[borderCodes[i]], 0, testCodeHistory );
+            Q.pushWithValueAndHistory(countries[borderCodes[i]], 0, testCodeHistory );
         }
         
         // So now we have all the continent borders in the Q (all with cost 0),
@@ -1010,7 +1076,7 @@ public class Viking implements LuxAgent
         String message = "";
         String name;
         
-        // loop through all the continents and calculate their fitness, picking the highest one
+        // loop through all the continents and calculate their fitness
         for(int cont = 0; cont < numConts; cont++) {
             
             // get the factors for the continent to calculate the fitness
@@ -1170,7 +1236,7 @@ public class Viking implements LuxAgent
             return "" + value;
         }
         if (value instanceof int[]) {
-            return Arrays.toString((int[]) value);
+            return Arrays.toString(getCountryNames((int[]) value));
         }
         if (value instanceof ArrayList) {
             String listString = new String();
