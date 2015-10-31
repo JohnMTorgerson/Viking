@@ -881,6 +881,14 @@ public class Viking implements LuxAgent
 //            testChat("pickBestTakeoverPaths", "-- Paths we're picking:");
 //            chatCountryNames("pickBestTakeoverPaths", results);
             
+            ArrayList<int[]> fakeCheckPaths = new ArrayList<int[]>(); // testing
+            ArrayList<int[]> fakeCheckPaths2 = new ArrayList<int[]>(); //testing
+            for (int[] element : checkPaths) {
+//                fakeCheckPaths.add(element.clone());
+                fakeCheckPaths2.add(element.clone());
+            }
+            
+/*
             startTime = System.currentTimeMillis();
             
             // prune checkPaths
@@ -903,7 +911,58 @@ public class Viking implements LuxAgent
             
             endTime = System.currentTimeMillis();
             
-            testChat("pickBestTakeoverPaths", "prune checkPaths time: " + (endTime - startTime) + "ms");
+            testChat("pickBestTakeoverPaths", "prune checkPaths time (iterator): " + (endTime - startTime) + "ms");
+            
+            startTime = System.currentTimeMillis();
+            //testing
+            int checkPathsSize = fakeCheckPaths.size();
+            for (int i=0; i<checkPathsSize; i++) {
+                int[] thisCheckPath = fakeCheckPaths.get(i); // the path in checkPaths we're testing this loop
+                jLoop1: for (int j=0; j<results.size(); j++) { // loop through all the paths in results
+                    int[] resultsPath = results.get(j); // the path in results we're checking against this loop
+                    for (int k=0; k<resultsPath.length; k++) { // loop through this path in results
+                        if (thisCheckPath[thisCheckPath.length-1] == resultsPath[k]) { // if the last element in thisCheckPath is in resultsPath
+                            fakeCheckPaths.remove(i); // remove thisCheckPath from checkPaths
+                            i -= 1;
+                            checkPathsSize -= 1;
+                            break jLoop1; // move on to next path in checkPaths
+                        }
+                    }
+                }
+            }
+            
+            endTime = System.currentTimeMillis();
+            
+            testChat("pickBestTakeoverPaths", "prune checkPaths time (C-loop remove): " + (endTime - startTime) + "ms");
+*/
+            
+            startTime = System.currentTimeMillis();
+            // testing
+            ArrayList<int[]> prunedPaths = new ArrayList<int[]>();
+            int checkPathsSize = fakeCheckPaths2.size();
+            for (int i=0; i<checkPathsSize; i++) {
+                boolean isMatch = false;
+                int[] thisCheckPath = fakeCheckPaths2.get(i); // the path in checkPaths we're testing this loop
+                jLoop2: for (int j=0; j<results.size(); j++) { // loop through all the paths in results
+                    int[] resultsPath = results.get(j); // the path in results we're checking against this loop
+                    for (int k=0; k<resultsPath.length; k++) { // loop through this path in results
+                        if (thisCheckPath[thisCheckPath.length-1] == resultsPath[k]) { // if the last element in thisCheckPath is in resultsPath
+                            isMatch = true;
+                            break jLoop2; // move on to next path in checkPaths
+                        }
+                    }
+                }
+                if (!isMatch) {
+                    prunedPaths.add(thisCheckPath);
+                }
+            }
+            
+            checkPaths = prunedPaths;
+            
+            endTime = System.currentTimeMillis();
+            
+            testChat("pickBestTakeoverPaths", "prune checkPaths time (C-loop add): " + (endTime - startTime) + "ms");
+            
             
 //            testChat("pickBestTakeoverPaths", "-- Pruned list of paths:");
 //            chatCountryNames("pickBestTakeoverPaths", checkPaths);
