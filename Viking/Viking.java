@@ -28,7 +28,7 @@ public class Viking implements LuxAgent
     // so we'll store those plans in this variable
     protected ArrayList<int[]> battlePlan;
     
-    // a global variable which tells moveArmiesIn() to leave some of its armies behind
+    // tells moveArmiesIn() to leave some of its armies behind
     // after successfully attacking a country. attackPhase() will calculate this number
     // so that moveArmiesIn() will know how many armies to leave behind
     protected int leaveArmies;
@@ -106,10 +106,8 @@ public class Viking implements LuxAgent
         testChat("placeInitialArmies", "*********** PLACE INITIAL ARMIES ***********");
         
 //        chatContinentNames();
-        
-        // for now, all we're going to do is dump all our armies on one country
-        // to try to take over a single continent. basically, exactly as we did in placeArmies()
-        // so we're actually just going to call placeArmies() for now
+
+        // do exactly as we do at the beginning of a normal turn
         placeArmies(numberOfArmies);
     }
     
