@@ -344,7 +344,7 @@ public class Viking implements LuxAgent
             // as one big glob, and estimating the cost as if the glob were a single long path
             int cost;
             int[] enemyCountries = getEnemyCountriesInArea(area); // get enemy countries in the area
-            int[] entryPath = getCheapestRouteToArea(area); // cheapest path to area (in case we don't own any countries)
+            int[] entryPath = getCheapestRouteToArea(area, false); // cheapest path to area (in case we don't own any countries); pass 'false' because we don't care about ending up at the weakest border of the area
             if (entryPath.length > 2) { // if entryPath is larger than two countries, then we have a non-trivial path to the area, which we need to account for in the cost
                 int[] pathAndArea = new int[entryPath.length - 2 + enemyCountries.length]; // new array to hold the path and the countries in the area
                 System.arraycopy(entryPath,1,pathAndArea,0,entryPath.length-2); // copy entryPath into new array, except the first element (which is a country we own, so doesn't count toward cost) and the last element (which is a country in the area, so it's already in enemyCountries)
@@ -430,9 +430,13 @@ public class Viking implements LuxAgent
                 objective.put("enemyIncome", board.getPlayerIncome(owner));
                 
                 // find and set route
-                int[] route = getCheapestRouteToCont(continent);
+                //
+                // first, actually find the cheapest route to the continent
+                // we pass 'true' to the function to tell it to account for the number of armies
+                // on the border country we end up at, because we want to find the weakest way into the continent
+                int[] route = getCheapestRouteToCont(continent, true);
                 ArrayList<int[]> plan = new ArrayList<int[]>();
-                plan.add(route);
+                plan.add(route); // package the path into an array list
                 objective.put("plan",plan);
                 
                 // find and set cost
@@ -698,8 +702,11 @@ public class Viking implements LuxAgent
         else { // we don't own any countries in countryList
 //            testChat("getAreaTakeoverPaths", "we don't own any countries in goalCont");
             
-            // find the country outside of countryList that we own with the cheapest path to it
-            int[] initialPath = getCheapestRouteToArea(countryList);
+            // find the cheapest path to it from some country we own
+            // we pass 'false' as the second parameter to tell the function that we don't care
+            // how many armies are on the border of the area that we end up at; we only care about
+            // the cost of the path up until that point, since we're planning on taking over the whole area anyway
+            int[] initialPath = getCheapestRouteToArea(countryList, false);
             
 //            String[] countryNames = getCountryNames(initialPath);
 //            testChat("getAreaTakeoverPaths", "Path to continent: " + Arrays.toString(countryNames));
@@ -791,19 +798,25 @@ public class Viking implements LuxAgent
     // find the nearest country owned by owner and return the cheapest path
     // from it to a country in the given continent
     // just packages all the countries in that continent into an area and calls getCheapestRouteToArea
-    protected int[] getCheapestRouteToCont(int cont, int owner) {
-        return getCheapestRouteToArea(getCountriesInContinent(cont), owner);
+    protected int[] getCheapestRouteToCont(int cont, boolean into, int owner) {
+        return getCheapestRouteToArea(getCountriesInContinent(cont), into, owner);
     }
     // overload getCheapestRouteToCont to allow a single parameter version
     // if no ID is provided, assume it should be the owner
-    protected int[] getCheapestRouteToCont(int cont) {
-        return getCheapestRouteToCont(cont, ID);
+    protected int[] getCheapestRouteToCont(int cont, boolean into) {
+        return getCheapestRouteToCont(cont, into, ID);
     }
                               
-    // find the nearest country owned by owner and return the cheapest path
-    // from it to a country in the given area (area could be a continent, for example)
+    // find the cheapest path from any country owned by owner
+    // to a country in the given area (area could be a continent, for example).
+    // the boolean parameter "into" tells the function whether to take into account the
+    // number of armies on the area's border country at the end of the path.
+    // if "into" is true, we add that country's armies to the cost; if false, we don't
+    // so that when we're using this function to knockout an enemy bonus, we find the weakest border (all else being equal)
+    // but when we're taking over the whole continent, we simply find the cheapest path to the continent
+    // without regard to how many countries are on the border we end up at
     // this is a modified version of the BoardHelper method cheapestRouteFromOwnerToCont()
-    protected int[] getCheapestRouteToArea(int[] area, int owner) {
+    protected int[] getCheapestRouteToArea(int[] area, boolean into, int owner) {
         
         String[] countryNames = getCountryNames(area);
         testChat("getCheapestRouteToArea", "getCheapestRouteToArea area: " + Arrays.toString(countryNames));
@@ -840,15 +853,20 @@ public class Viking implements LuxAgent
         int[] borderCodes = getAreaBorders(area);
         for (int i = 0; i < borderCodes.length; i++) {
             testCode = borderCodes[i];
-            armiesSoFar = 0;
+            if (into == true) { // if we care about finding the weakest border
+                armiesSoFar = countries[borderCodes[i]].getArmies(); // add the armies of the starting country to the cost
+            } else { // if we don't
+                armiesSoFar = 0; // start with a cost of 0
+            }
             testCodeHistory = new int[1];
             testCodeHistory[0] = testCode;
             haveSeenAlready[testCode] = true;
             
-            Q.pushWithValueAndHistory(countries[borderCodes[i]], 0, testCodeHistory );
+            Q.pushWithValueAndHistory(countries[borderCodes[i]], armiesSoFar, testCodeHistory );
         }
         
-        // So now we have all the continent borders in the Q (all with cost 0),
+        // So now we have all the area borders in the Q
+        // (all with either cost 0, or the cost of the armies on the border country, depending on the value of "into"),
         // expand every possible outward path (in the order of cost).
         // eventually we should find a country owned by <owner>,
         // then we return that path's history
@@ -895,8 +913,8 @@ public class Viking implements LuxAgent
     }
     // overload getCheapestRouteToArea to allow a single parameter version
     // if no ID is provided, assume it should be the owner
-    protected int[] getCheapestRouteToArea(int[] area) {
-        return getCheapestRouteToArea(area, ID);
+    protected int[] getCheapestRouteToArea(int[] area, boolean into) {
+        return getCheapestRouteToArea(area, into, ID);
     }
     
     // called in the placeArmies() and placeInitialArmies() phases
