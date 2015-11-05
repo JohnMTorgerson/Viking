@@ -143,6 +143,10 @@ public class Viking implements LuxAgent
             battlePlan.add(trimFork(battlePlan, objectivePath));
         }
         
+        ArrayList<HashMap> takeoverObjectiveList = findTakeoverObjectives();
+        testChat("placeArmies", "--- Takeover Objectives: --- ");
+        chatObjectives("placeArmies", takeoverObjectiveList);
+        
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
         int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
 //        bestContList = new int[] { 3,14,5 }; // interesting continents in U.S.S. Lionhart map
@@ -166,7 +170,7 @@ public class Viking implements LuxAgent
                 // the pickBestTakeoverPaths function will simulate taking over the continent
                 // from multiple countries and give us back the best set of paths to do so
                 // the first country in each path (or route) is the one we want to place our armies on
-                int[] goalContCountries = getCountriesInContinent(goalCont, countries); // put all the countries from the goal cont into an integer array to pass to the getAreaTakeoverPaths function
+                int[] goalContCountries = getCountriesInContinent(goalCont); // put all the countries from the goal cont into an integer array to pass to the getAreaTakeoverPaths function
                 ArrayList<int[]> thisContPlan = pickBestTakeoverPaths(goalContCountries); // get the best paths to take over the goalCont
                 
                 // now check all the paths in our new continent against all the paths already in battlePlan (from other continents)
@@ -179,7 +183,7 @@ public class Viking implements LuxAgent
                     battlePlan.add(trimmedPath);
                 }
             
-                calculateBorderStrength(goalContCountries);
+                setBorderStrength(goalContCountries);
                 
                 // place only the number of armies needed to takeover the continent on the starting countries of all the paths
                 // store any remaining armies available in numberOfArmies
@@ -234,7 +238,7 @@ public class Viking implements LuxAgent
                     if (forkArmies == 0) { testChat("attackPhase", "No forks from this country"); }
                     
                     // find out if we want to leave any armies on this country as a border garrison
-                    int garrisonArmies = findBorderCost(attackRoute[j]);
+                    int garrisonArmies = findBorderStrength(attackRoute[j]);
                     
                     // leaveArmies is a global variable
                     // this is how many armies we want to leave on the attacking country
@@ -299,10 +303,22 @@ public class Viking implements LuxAgent
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
     
+    // findTakeoverObjectives() creates an "objective" hashmap for each continent on the board
+    // and packages all the objectives in an array list, which it returns to the placeArmies() function
+    // which will use the information to decide which ones to take over each turn, if any
+    //
+    // each takeover objective corresponds to a continent. it packages all the countries in that continent,
+    // plus possibly a few external countries (in order to consolidate the borders it needs to defend so there will be fewer of them)
+    // into an integer array of country codes called an "area", and stores that array as a value.
+    // it also stores an estimate of the cost of taking over that area,
+    // along with the continent bonus and the number of borders.
+    //
+    // this information should be enough for placeArmies() to prioritize takeover objectives
+    // each turn based on the number of armies available and balanced against other types of objectives (such as knockout objectives)
     protected ArrayList<HashMap> findTakeoverObjectives() {
         ArrayList<HashMap> objectiveList = new ArrayList<HashMap>();
         
-        // loop through all the continents and calculate their fitness
+        // loop through all the continents to create an "objective" hashmap for each one and add it to objectiveList
         for(int continent = 0; continent < numConts; continent++) {
             HashMap<String, Object> objective = new HashMap<String, Object>(); // the Objective hashmap for this continent
             
@@ -310,20 +326,53 @@ public class Viking implements LuxAgent
             objective.put("continentID", continent);
             
             // find and set area
-            // create area (int[] of countries in continent) with smart borders
+            // in the future this may include some extra countries outside the continent in order to
+            // reduce the number of borders necessary to defend, but for now the area will just be the continent proper
+            int[] area = getCountriesInContinent(continent);
+            objective.put("area", area);
             
             // set continent bonus
             objective.put("bonus", board.getContinentBonus(continent));
             
             // find and set cost
-            int[] enemyCountries = getEnemyCountriesInContinent(ID, continent, countries);
-            int cost = getGlobCost(enemyCountries);
-            // (add borders to cost here)
+            //
+            // this is an estimate of how many armies we'll need to take over the area,
+            // including erecting border garrisons on all the borders.
+            // when it comes time for the bot to actually place armies to take over the area,
+            // it will have calculated the attack paths it needs to do so, and figured out exactly how many armies
+            // it needs to succesfully prosecute those paths. that number will be more precise than this estimate,
+            // but this should be close. since it's expensive to find the actual attack paths,
+            // we're not doing that here. instead, we're simply treating all the enemy countries in the area (plus a path to the area if needed)
+            // as one big glob, and estimating the cost as if the glob were a single long path
+            int cost;
+            int[] enemyCountries = getEnemyCountriesInArea(area); // get enemy countries in the area
+            int[] entryPath = getCheapestRouteToArea(area); // cheapest path to area (in case we don't own any countries)
+            if (entryPath.length > 2) { // if entryPath is larger than two countries, then we have a non-trivial path to the area, which we need to account for in the cost
+                int[] pathAndArea = new int[entryPath.length - 2 + enemyCountries.length]; // new array to hold the path and the countries in the area
+                System.arraycopy(entryPath,1,pathAndArea,0,entryPath.length-2); // copy entryPath into new array, except the first element (which is a country we own, so doesn't count toward cost) and the last element (which is a country in the area, so it's already in enemyCountries)
+                System.arraycopy(enemyCountries,0,pathAndArea,entryPath.length-2,enemyCountries.length); // copy the countries in the area into the new array
+                cost = getGlobCost(pathAndArea); // estimate the cost of the area and the path together
+            } else { // in case the entry path is smaller than two countries, we don't need it, because we own at least one country in the area or an adjacent country
+                cost = getGlobCost(enemyCountries); // in this case, get the cost of just the enemy countries in the area
+            }
+            for (int country : area) { // now loop through every country in the area to add border garrisons to the cost
+                int borderStrength = calculateBorderStrength(country, area); // what the border garrison should be for this country; if it is not a border, this will be 0
+                int borderArmies = countries[country].getOwner() == ID ? countries[country].getArmies() - 1 : 0; // how many (extra) armies are on this country if we own it; if we don't own it, 0
+                cost += Math.max(0,borderStrength - borderArmies); // add the border strength we want to the cost minus any armies we already have on that border (or 0 if there are more than enough armies already there)
+            }
             objective.put("cost", cost);
             
             // find and set number of borders
+            int numBorders = 0;
+            for (int country : area) {
+                if (isAreaBorder(country, area)) {
+                    numBorders += 1;
+                }
+            }
+            objective.put("numBorders", numBorders);
             
-            
+            // add objective to objectiveList arraylist
+            objectiveList.add(objective);
         }
         
         return objectiveList;
@@ -403,17 +452,34 @@ public class Viking implements LuxAgent
     }
     
     
+    // checks if country is in borderArmies hashmap, and if it is, returns the value, if not, returns 0
+    // i.e. if the country is a border, this function will return the number of armies we intend to put/leave on it as a garrison
+    protected int findBorderStrength(int country) {
+        if (borderArmies.get(country) != null) {
+            return borderArmies.get(country);
+        }
+        return 0;
+    }
 
     // called by placeArmies(), figures out how many armies to put on each border country of the given area
     // stores the number of armies it calculates for each country in the global hashmap borderArmies
     // does NOT actually place those armies on the countries
-    // later this will be smarter, but for now, we're just putting 5 on everything
-    protected void calculateBorderStrength(int[] area) {
+    protected void setBorderStrength(int[] area) {
         for (int country : area) {
-            if (isAreaBorder(country, area)) {
-                borderArmies.put(country, 5);
-            }
+            int strength = calculateBorderStrength(country, area);
+            borderArmies.put(country, strength); // borderArmies is a global hashmap
         }
+    }
+    
+    // calculate how many armies to leave on the given country as a border garrison
+    // if the country is not a border, will return 0;
+    // later this will be smarter, but for now, we're just putting 5 on all the borders
+    protected int calculateBorderStrength(int country, int[] area) {
+        int strength = 0;
+        if (isAreaBorder(country, area)) {
+            strength = 5;
+        }
+        return strength;
     }
     
     // called by placeArmies()
@@ -440,8 +506,8 @@ public class Viking implements LuxAgent
                 // we will place this number on the country but will NOT add it to costs, so that it will not be added to reservedArmies
                 // on future iterations of the loop, essentially ensuring that it will only be added to startCountry once
                 // even if there are multiple paths starting from the same country
-                // (findBorderCost() is also run on every other country in the path and its forks when we calculate the cost for it)
-                int borderGarrison = findBorderCost(startCountry);
+                // (findBorderStrength() is also run on every other country in the path and its forks when we calculate the cost for it)
+                int borderGarrison = findBorderStrength(startCountry);
                 
                 // subtract the number of armies already on the starting country (minus 1) from cost
                 // not including any armies we may have placed or reserved there on previous iterations of the loop
@@ -520,16 +586,25 @@ public class Viking implements LuxAgent
     // does not account for any forks, only calculates over a single path
     // note that "cost" in this function is not simply the number of enemy armies in the way
     // rather, it is an estimate of how many armies it will actually take to conquer the given path
+    // *** including the cost of any border garrisons we will want to leave along the way ***
+    // calls getPathCost()
     protected int getPathCostWithBorders(int[] path) {
+        // get the cost of actually taking over the path
         int cost = getPathCost(path);
         
+        // add the cost of any border garrisons we want to leave along the way
         for (int i=1; i<path.length; i++) { // loop through the path, beginning on the SECOND country
-            cost += findBorderCost(path[i]); // check if we want to leave any armies on this country as a border garrison, add that value to cost
+            cost += findBorderStrength(path[i]); // check if we want to leave any armies on this country as a border garrison, add that value to cost
         }
 
         return cost;
     }
     
+    // calculate the number of armies it will require to take over a whole path (not including the starting country, which we assume we own)
+    // does not subtract the number of armies we already have on the first country in the path
+    // does not account for any forks, only calculates over a single path
+    // note that "cost" in this function is not simply the number of enemy armies in the way
+    // rather, it is an estimate of how many armies it will actually take to conquer the given path
     protected int getPathCost(int[] path) {
         float cost = 0;
         for (int i=1; i<path.length; i++) { // loop through the path, beginning on the SECOND country
@@ -557,15 +632,6 @@ public class Viking implements LuxAgent
         System.arraycopy(glob, 0, dummyGlob, 1, glob.length);
         
         return getPathCost(dummyGlob);
-    }
-    
-    // checks if country is in borderArmies hashmap, and if it is, returns the value, if not, returns 0
-    // i.e. if the country is a border, this function will return the number of armies we intend to put/leave on it as a garrison
-    protected int findBorderCost(int country) {
-        if (borderArmies.get(country) != null) {
-            return borderArmies.get(country);
-        }
-        return 0;
     }
     
     // note: I wrote the following ugly crap intending to make use of it in the placeArmiesOnRoutes() function
@@ -616,7 +682,7 @@ public class Viking implements LuxAgent
         // we'll test every path from every country we own in the countryList
         // if we don't own any countries in countryList, we'll find a country close-by to start from
         
-        int[] candidates = getPlayerCountriesInArea(ID, countryList, countries); // get countries in countryList that we own
+        int[] candidates = getPlayerCountriesInArea(countryList); // get countries in countryList that we own
 
         if (candidates.length > 0) { // if we own any countries in countryList
             
@@ -728,7 +794,7 @@ public class Viking implements LuxAgent
     // from it to a country in the given continent
     // just packages all the countries in that continent into an area and calls getCheapestRouteToArea
     protected int[] getCheapestRouteToCont(int cont, int owner) {
-        return getCheapestRouteToArea(getCountriesInContinent(cont, countries), owner);
+        return getCheapestRouteToArea(getCountriesInContinent(cont), owner);
     }
     // overload getCheapestRouteToCont to allow a single parameter version
     // if no ID is provided, assume it should be the owner
@@ -750,7 +816,7 @@ public class Viking implements LuxAgent
         }
         
         // first, check to see if we already own a country in the area.
-        int[] ownedCountries = getPlayerCountriesInArea(owner, area, countries);
+        int[] ownedCountries = getPlayerCountriesInArea(area, owner);
         if (ownedCountries.length > 0) {
             // the player owns a country in the area already. That country itself is the cheapest route
             // so simply return the first one in the list of owned countries
@@ -1137,7 +1203,7 @@ public class Viking implements LuxAgent
             
             // get the factors for the continent to calculate the fitness
             bonus = board.getContinentBonus(cont); // bonus
-            numCountriesOwned = getPlayerCountriesInContinent(ID, cont, countries).length; // how many countries we own in cont
+            numCountriesOwned = getPlayerCountriesInContinent(cont).length; // how many countries we own in cont
             numArmiesOwned = BoardHelper.getPlayerArmiesInContinent(ID, cont, countries); // how many of our armies in cont
             numCountries = BoardHelper.getContinentSize(cont, countries); // how many countries in cont
             numEnemyArmies = BoardHelper.getEnemyArmiesInContinent(ID, cont, countries); // how many enemy armies in cont
@@ -1306,12 +1372,12 @@ public class Viking implements LuxAgent
     }
     
     // helper function to return an array of the countries a player owns in a given continent
-    // ID is the player ID to check; cont is the continent in question; countries is the global list of all countries on the board
-    protected int[] getPlayerCountriesInContinent(int ID, int cont, Country[] countries) {
+    // player is the player ID to check; cont is the continent in question
+    protected int[] getPlayerCountriesInContinent(int cont, int player) {
         // continent iterator returns all countries in 'cont',
-        // player iterator returns all countries out of those owned by 'ID'
+        // player iterator returns all countries out of those owned by 'player'
         // this gives us the list of all the countries we own in the continent
-        CountryIterator theCountries = new PlayerIterator(ID, new ContinentIterator(cont, countries));
+        CountryIterator theCountries = new PlayerIterator(player, new ContinentIterator(cont, countries));
         
         // Put all the countries we own into an ArrayList
         ArrayList countryArray = new ArrayList();
@@ -1328,14 +1394,19 @@ public class Viking implements LuxAgent
         
         return intArray;
     }
+    // overloaded version: if no player is provided, assume it should be us
+    protected int[] getPlayerCountriesInContinent(int cont) {
+        return getPlayerCountriesInContinent(cont, ID);
+    }
+
     
     // helper function to return an array of the countries a player owns in a given list of countries (area)
-    // ID is the player ID to check; area is the list of countries to search in; countries is the global list of all countries on the board
-    protected int[] getPlayerCountriesInArea(int ID, int[] area, Country[] countries) {
-        // loop through all the countries in area; if ID owns them, add them to the results ArrayList
+    // player is the player ID to check; area is the list of countries to search in
+    protected int[] getPlayerCountriesInArea(int[] area, int player) {
+        // loop through all the countries in area; if player owns them, add them to the results ArrayList
         List<Integer> results = new ArrayList<Integer>();
         for (int i=0; i<area.length; i++) {
-            if (countries[area[i]].getOwner() == ID) {
+            if (countries[area[i]].getOwner() == player) {
                 results.add(area[i]);
             }
         }
@@ -1349,9 +1420,14 @@ public class Viking implements LuxAgent
         
         return intArray;
     }
+    // overloaded version: if no player is provided, assume it should be us
+    protected int[] getPlayerCountriesInArea(int[] area) {
+        return getPlayerCountriesInArea(area, ID);
+    }
+
 
     // helper function to return an array of the countries in a given continent
-    protected int[] getCountriesInContinent(int cont, Country[] countries) {
+    protected int[] getCountriesInContinent(int cont) {
         // continent iterator returns all countries in 'cont'
         CountryIterator theCountries = new ContinentIterator(cont, countries);
         
@@ -1364,7 +1440,7 @@ public class Viking implements LuxAgent
         // Put the country code of each of the countries into an integer array
         int size = countryArray.size();
         int[] intArray = new int[size];
-        for(int i=0; i < size; i++) {
+        for(int i=0; i<size; i++) {
             intArray[i] = ((Country)countryArray.get(i)).getCode();
         }
         
@@ -1372,24 +1448,36 @@ public class Viking implements LuxAgent
     }
     
     // helper function to return an array of the countries a player does not own in a given continent
-    protected int[] getEnemyCountriesInContinent(int ID, int cont, Country[] countries) {
-        int[] theCountries = getCountriesInContinent(cont, countries);
-        
+    protected int[] getEnemyCountriesInContinent(int owner, int cont, Country[] countries) {
+        // get all the countries in the continent
+        int[] theCountries = getCountriesInContinent(cont);
+        // return getEnemyCountriesInArea on the list of countries
+        return getEnemyCountriesInArea(theCountries, owner);
+    }
+    
+    // helper function to return an array of the countries a player does not own in a given area
+    protected int[] getEnemyCountriesInArea(int[] area, int owner) {
+        // add all the countries not owned by owner to a new array list
         ArrayList<Integer> countryList = new ArrayList<Integer>();
-        for (int country : theCountries) {
-            if (countries[country].getOwner() != ID) {
+        for (int country : area) {
+            if (countries[country].getOwner() != owner) {
                 countryList.add(country);
             }
         }
         
-        // Put the country code of each of the countries into an integer array
+        // copy the array list of enemy countries to an integer array
         int size = countryList.size();
-        int[] intArray = new int[size];
-        for(int i=0; i < size; i++) {
-            intArray[i] = countryList.get(i);
+        int[] results = new int[size];
+        for(int i=0; i<size; i++) {
+            results[i] = countryList.get(i);
         }
         
-        return intArray;
+        // return the integer array of enemy countries
+        return results;
+    }
+    // overloaded version; if no owner ID is provided, assume it is us
+    protected int[] getEnemyCountriesInArea(int[] area) {
+        return getEnemyCountriesInArea(area, ID);
     }
 
     // custom get continent borders function
