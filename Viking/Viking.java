@@ -74,19 +74,20 @@ public class Viking implements LuxAgent
     protected void testChat(String topic, String message) {
         String[] topics = {
 //            "placeInitialArmies",
-            "placeArmies",
+//            "placeArmies",
 //            "attackPhase",
 //            "moveArmiesIn",
             
 //            "continentFitness",
-            "getAreaTakeoverPaths",
+//            "getAreaTakeoverPaths",
 //            "findAreaPaths",
-            "pickBestTakeoverPaths",
+//            "pickBestTakeoverPaths",
 //            "getCheapestRouteToArea",
 //            "placeArmiesOnRoutes",
 //            "calculateCladeCost",
             "calculateBorderStrength",
-            "nothing"
+//            "getAreaBonuses",
+            ""
         };
         
         for (int i=0; i<topics.length; i++) {
@@ -331,7 +332,8 @@ public class Viking implements LuxAgent
             objective.put("area", area);
             
             // set continent bonus
-            objective.put("bonus", board.getContinentBonus(continent));
+            int bonus = board.getContinentBonus(continent);
+            objective.put("bonus", bonus);
             
             // find and set number of borders
             int numBorders = 0;
@@ -365,7 +367,7 @@ public class Viking implements LuxAgent
                 cost = getGlobCost(enemyCountries); // so in this case, get the cost of just the enemy countries in the area
             }
             for (int country : area) { // now loop through every country in the area to add border garrisons to the cost
-                int borderStrength = calculateBorderStrength(country, area, numBorders); // what the border garrison should be for this country; if it is not a border, this will be 0
+                int borderStrength = calculateBorderStrength(country, area, numBorders, bonus); // what the border garrison should be for this country; if it is not a border, this will be 0
                 int borderArmies = countries[country].getOwner() == ID ? countries[country].getArmies() - 1 : 0; // how many (extra) armies are on this country if we own it; if we don't own it, 0
                 cost += Math.max(0,borderStrength - borderArmies); // add the border strength we want to the cost minus any armies we already have on that border (or 0 if there are more than enough armies already there)
             }
@@ -469,9 +471,10 @@ public class Viking implements LuxAgent
     // stores the number of armies it calculates for each country in the global hashmap borderArmies
     // does NOT actually place those armies on the countries
     protected void setBorderStrength(int[] area) {
-        int numBorders = getAreaBorders(area).length;
+        int numBorders = getAreaBorders(area).length; // the number of borders <area> has
+        int areaBonus = getAreaBonuses(area); // any continent bonuses contained within <area>
         for (int country : area) {
-            int strength = calculateBorderStrength(country, area, numBorders);
+            int strength = calculateBorderStrength(country, area, numBorders, areaBonus);
             borderArmies.put(country, strength); // borderArmies is a global hashmap
         }
     }
@@ -481,17 +484,13 @@ public class Viking implements LuxAgent
     // later this will be smarter, but for now, we're just putting 5 on all the borders
     //
     // WE HAVE NOT TESTED THIS FUNCTION YET
-    protected int calculateBorderStrength(int country, int[] area, int numBorders) {
+    protected int calculateBorderStrength(int country, int[] area, int numBorders, int areaBonus) {
         int strength = 0;
         if (isAreaBorder(country, area)) { // if <country> is a border of <area>
-            
-            testChat("calculateBorderStrength", "--- calculateBorderStrength of: " + countries[country].getName() + " ---");
-            
             int income = board.getPlayerIncome(ID); // our income
             int greatestThreat = findGreatestThreat(country); // highest value of extant armies + player income among nearby countries
             int biggestBonus = getBiggestContinentBonus();
-            int bonus = getAreaBonuses(area); // set this to the bonus of all continents completely contained by <area>
-            double areaValue  = Math.pow(bonus, 0.5)/Math.pow(biggestBonus, 0.5); // relative value of this bonus compared to highest bonus
+            double areaValue  = Math.pow(areaBonus, 0.5)/Math.pow(biggestBonus, 0.5); // relative value of this bonus compared to highest bonus
             
             // formula to set <strength> based on the relevant factors
             // sets <strength> to the biggest nearby threat, scaled down by the relative value of the bonus we're protecting
@@ -501,11 +500,15 @@ public class Viking implements LuxAgent
             // in order to keep the border garrison requirements from being out of control
             strength = (int) Math.ceil(Math.min(greatestThreat * areaValue, (double) income / (double) numBorders));
             
-            return 5;
+            testChat("calculateBorderStrength", "Border strength of " + countries[country].getName() + " is " + strength);
         }
         
-        
-        return 0;
+        return strength;
+    }
+    // overloaded version without the <bonuses> parameter
+    protected int calculateBorderStrength(int country, int[] area, int numBorders) {
+        int areaBonus = getAreaBonuses(area); // set this to the bonus of all continents completely contained by <area>
+        return calculateBorderStrength(country, area, numBorders, areaBonus);
     }
     
     // find the strength of the greatest nearby threat to a given country;
@@ -544,8 +547,8 @@ public class Viking implements LuxAgent
             }
         }
         
-        testChat("calculateBorderStrength", "There are " + (neighborhood.size() - 1) + " countries " + depth + " deep from " + countries[toCountry].getName() + ":");
-        chatCountryNames("calculateBorderStrength", neighborhood);
+//        testChat("calculateBorderStrength", "There are " + (neighborhood.size() - 1) + " countries " + depth + " deep from " + countries[toCountry].getName() + ":");
+//        chatCountryNames("calculateBorderStrength", neighborhood);
         
         // loop through <neighborhood> and find greatest threat
         neighborhood.remove(0); // delete <toCountry> from the list of countries to check
@@ -555,7 +558,7 @@ public class Viking implements LuxAgent
                 // the threat of this country is the number of armies on the country plus the income of the player that owns it;
                 // later we may want to include an assessment of that player's cards here as well
                 // and also how many countries/armies are between there and <toCountry>
-                int threat = countries[country].getArmies() + board.getPlayerIncome(owner);
+                int threat = countries[country].getArmies() - 1 + board.getPlayerIncome(owner);
                 // if this country is the greatest threat so far, set that as our <greatestThreat>
                 if (threat > greatestThreat) {
                     greatestThreat = threat;
@@ -1356,20 +1359,6 @@ public class Viking implements LuxAgent
         return c;
     }
     
-    // a custom comparator class to compare integer arrays by length
-    // NOT WORKING AT THE MOMENT
-/*    class intArrayLengthComp implements Comparator<int[]> {
-        public int compare(int[] a, int[] b) {
-            if (a.length > b.length) {
-                return 1;
-            } else if (a.length < b.length) {
-                return -1;
-            } else {
-                return 0;
-            }
-        }
-    }*/
-    
     // takes an integer array of country codes and returns a string array of the associated country names
     // useful for testing purposes
     protected String[] getCountryNames(int[] codes) {
@@ -1581,9 +1570,12 @@ public class Viking implements LuxAgent
     }
     
     // helper function to return the summary magnitude of all continent bonuses completely contained within <area>
-    //
-    // THIS FUNCTION HAS NOT BEEN TESTED YET!
+    // we should never have duplicate countries in an area,
+    // but note that this function will not work if there are duplicate countries
     protected int getAreaBonuses(int[] area) {
+        testChat("getAreaBonuses", "--- Get Area Bonuses ---");
+        chatCountryNames("getAreaBonuses", area);
+        
         int totalBonus = 0;
         
         // create an array of the number of <area> countries in each continent,
@@ -1595,10 +1587,19 @@ public class Viking implements LuxAgent
         }
         for (int country : area) { // loop through area to populate <contPopulations>
             int continent = countries[country].getContinent(); // the continent this country is in
-            if (continent > 0) { // if the country is part of a continent
+            if (continent >= 0) { // if the country is part of a continent
                 contPopulations[continent] += 1; // add 1 to <contPopulations> for this continent
             }
         }
+        
+        String message = "Countries in continents: \n";
+        for (int i=0; i<contPopulations.length; i++) {
+            message += board.getContinentName(i) + ": ";
+            message += contPopulations[i] + "\n";
+        }
+        testChat("getAreaBonuses", message);
+        
+        testChat("getAreaBonuses", "Continents completely covered by area: ");
         
         // now we loop through <contPopulations>, and check each value
         // against the total number of countries that continent contains
@@ -1606,9 +1607,14 @@ public class Viking implements LuxAgent
         for (int continent=0; continent<contPopulations.length; continent++) {
             int size = BoardHelper.getContinentSize(continent, countries);
             if (contPopulations[continent] == size) { // if <area> has all the countries in this continent
+                
+                testChat("getAreaBonuses", board.getContinentName(continent));
+                
                 totalBonus += board.getContinentBonus(continent); // add this continent's bonus to <totalBonus>
             }
         }
+        
+        testChat("getAreaBonuses", "Total bonus: " + totalBonus);
         
         return totalBonus;
     }
