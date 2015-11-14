@@ -500,10 +500,12 @@ public class Viking implements LuxAgent
             // except if <income>/<numBorders> is smaller than that number, we limit <strength> to that
             // in order to keep the border garrison requirements from being out of control
             strength = (int) Math.ceil(Math.min(greatestThreat * areaValue, (double) income / (double) numBorders));
+            
+            return 5;
         }
         
         
-        return 5;
+        return 0;
     }
     
     // find the strength of the greatest nearby threat to a given country;
@@ -1584,26 +1586,26 @@ public class Viking implements LuxAgent
     protected int getAreaBonuses(int[] area) {
         int totalBonus = 0;
         
-        // create an ArrayList of the number of <area> countries in each continent,
+        // create an array of the number of <area> countries in each continent,
         // where the indices of the list are the continent codes,
         // and the values are the number of <area> countries in that continent
-        ArrayList<Integer> contPopulations = new ArrayList<Integer>();
-        for (int i=0; i<numConts; i++) {
-            contPopulations.add(0); // initially populate the whole list with 0
+        int[] contPopulations = new int[numConts];
+        for (int i=0; i<contPopulations.length; i++) {
+            contPopulations[i] = 0; // initially populate the whole list with 0
         }
         for (int country : area) { // loop through area to populate <contPopulations>
             int continent = countries[country].getContinent(); // the continent this country is in
             if (continent > 0) { // if the country is part of a continent
-                contPopulations.set(continent,contPopulations.get(continent) + 1); // add 1 to <contPopulations> for this continent
+                contPopulations[continent] += 1; // add 1 to <contPopulations> for this continent
             }
         }
         
         // now we loop through <contPopulations>, and check each value
         // against the total number of countries that continent contains
         // and if <area> has every country in it, add its bonus to <totalBonus>
-        for (int continent : contPopulations) {
+        for (int continent=0; continent<contPopulations.length; continent++) {
             int size = BoardHelper.getContinentSize(continent, countries);
-            if (contPopulations.get(continent) == size) { // if <area> has all the countries in this continent
+            if (contPopulations[continent] == size) { // if <area> has all the countries in this continent
                 totalBonus += board.getContinentBonus(continent); // add this continent's bonus to <totalBonus>
             }
         }
