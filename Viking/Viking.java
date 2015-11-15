@@ -85,7 +85,8 @@ public class Viking implements LuxAgent
 //            "getCheapestRouteToArea",
 //            "placeArmiesOnRoutes",
 //            "calculateCladeCost",
-            "calculateBorderStrength",
+//            "calculateBorderStrength",
+//            "findGreatestThreat",
 //            "getAreaBonuses",
             ""
         };
@@ -131,8 +132,8 @@ public class Viking implements LuxAgent
         sortKnockoutObjectives(knockoutObjectiveList, "bonus");
         sortKnockoutObjectives(knockoutObjectiveList, "enemyIncome");
         
-        testChat("placeArmies", "--- Sorted Knockout Objectives: --- Size: " + knockoutObjectiveList.size());
-        chatObjectives("placeArmies", knockoutObjectiveList);
+//        testChat("placeArmies", "--- Sorted Knockout Objectives: --- Size: " + knockoutObjectiveList.size());
+//        chatObjectives("placeArmies", knockoutObjectiveList);
         
         // for now, just add the first two to the battlePlan, trimming them for collisions
         int max = Math.min(2, knockoutObjectiveList.size());
@@ -145,7 +146,7 @@ public class Viking implements LuxAgent
         
         ArrayList<HashMap> takeoverObjectiveList = findTakeoverObjectives();
         testChat("placeArmies", "--- Takeover Objectives: --- ");
-        chatObjectives("placeArmies", takeoverObjectiveList);
+//        chatObjectives("placeArmies", takeoverObjectiveList);
         
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
         int[] bestContList = rateContinents(); // get ordered list of best continents to pursue
@@ -189,7 +190,7 @@ public class Viking implements LuxAgent
                 // store any remaining armies available in numberOfArmies
                 numberOfArmies = placeArmiesOnRoutes(battlePlan,numberOfArmies);
                 
-                testChat("placeArmies", "Number of armies left after placing on continent: " + numberOfArmies);
+//                testChat("placeArmies", "Number of armies left after placing on continent: " + numberOfArmies);
             //}
         }
         
@@ -457,7 +458,6 @@ public class Viking implements LuxAgent
         return objectiveList;
     }
     
-    
     // checks if country is in borderArmies hashmap, and if it is, returns the value, if not, returns 0
     // i.e. if the country is a border, this function will return the number of armies we intend to put/leave on it as a garrison
     protected int checkBorderStrength(int country) {
@@ -481,22 +481,19 @@ public class Viking implements LuxAgent
     
     // calculate how many armies to leave on the given country as a border garrison
     // if the country is not a border, will return 0;
-    // later this will be smarter, but for now, we're just putting 5 on all the borders
-    //
-    // WE HAVE NOT TESTED THIS FUNCTION YET
     protected int calculateBorderStrength(int country, int[] area, int numBorders, int areaBonus) {
         int strength = 0;
         if (isAreaBorder(country, area)) { // if <country> is a border of <area>
             int income = board.getPlayerIncome(ID); // our income
-            int greatestThreat = findGreatestThreat(country); // highest value of extant armies + player income among nearby countries
+            int greatestThreat = findGreatestThreat(country, area); // highest value of extant armies + player income among nearby countries
             int biggestBonus = getBiggestContinentBonus();
             double areaValue  = Math.pow(areaBonus, 0.5)/Math.pow(biggestBonus, 0.5); // relative value of this bonus compared to highest bonus
             
             // formula to set <strength> based on the relevant factors
             // sets <strength> to the biggest nearby threat, scaled down by the relative value of the bonus we're protecting
-            // for a small bonus will have an insufficient border, and the largest bonus on the board
+            // for a small bonus it will have an insufficient border, and the largest bonus on the board
             // will have a bonus equal to <greatestThreat>
-            // except if <income>/<numBorders> is smaller than that number, we limit <strength> to that
+            // except if <income>/<numBorders> is smaller than that number, in which case we limit <strength> to that
             // in order to keep the border garrison requirements from being out of control
             strength = (int) Math.ceil(Math.min(greatestThreat * areaValue, (double) income / (double) numBorders));
             
@@ -511,14 +508,80 @@ public class Viking implements LuxAgent
         return calculateBorderStrength(country, area, numBorders, areaBonus);
     }
     
+    protected int findGreatestThreat(int borderCountry, int[] area) {
+        int maxDepth = 3; // the depth we want to search out to
+        int currentDepth = 0; // begin with a depth of 1, since we're starting on the neighbors of <borderCountry>
+        int armiesThusFar = 0; // the armies on a given path so far
+        ArrayList<Integer> blacklist = new ArrayList<Integer>(); // the blacklist keeps track of the players whose countries we've seen so far along a given path
+        blacklist.add(ID); // begin by adding ourselves, so we don't ever consider ourselves a threat
+        
+        // recursively find the greatest threat from all neighbors of <borderCountry> out to <currentDepth>
+        int greatestThreat = findNeighborsThreat(borderCountry, area, currentDepth, maxDepth, armiesThusFar, blacklist);
+        
+        return greatestThreat;
+    }
+    
+    // called by findGreatestThreat()
+    // recursively finds neighbors of given country, and finds the threat level
+    protected int findNeighborsThreat(int country, int[] area, int currentDepth, int maxDepth, int armiesThusFar, ArrayList<Integer> oldBlacklist) {
+        // make deep copy of oldBlacklist, so we don't mess with other branches
+        ArrayList<Integer> blacklist = new ArrayList<Integer>();
+        blacklist.addAll(oldBlacklist);
+        
+        int threat = 0; // the threat from this country
+        int owner = countries[country].getOwner(); // the owner of <country>
+        int armies = countries[country].getArmies(); // the armies on <country>
+        
+        // if we're not on the first country (the actual border country)
+        if (currentDepth > 0) {
+            // if <owner> is not in blacklist, then we haven't run across a country owned by this player before
+            // so we assess the threat of this country
+            // (if we HAVE seen this owner before, we don't assess the threat, because the player won't
+            // be able to get to the area along this path, because it will run into itself, in which case
+            // we will leave threat at 0, as it was initially assigned)
+            if (!isInArray(owner, blacklist)) {
+                threat = Math.max(0,armies + board.getPlayerIncome(owner) - armiesThusFar - currentDepth);
+                blacklist.add(owner); // now we've seen this owner on this path, so add it to blacklist
+            }
+            
+            
+            // add the armies on this country to the total armies we've seen so far along this path
+            // to pass to the new neighbors
+        
+            armiesThusFar += armies;
+        }
+        
+        // iterate <currentDepth> to pass to the new neighbors
+        currentDepth++;
+        
+        // if we haven't exceeded <maxDepth> yet, go on to check neighbors
+        if (currentDepth <= maxDepth) {
+            // find neighbors of <country>
+            int[] neighbors = BoardHelper.getAttackList(countries[country], countries);
+            
+            // loop over the neighbors of <country> and recurse on them
+            for(int neighbor : neighbors) {
+                // only recurse on neighbors that aren't in the area
+                if (!isInArray(neighbor, area)) {
+                    int neighborThreat = findNeighborsThreat(neighbor, area, currentDepth, maxDepth, armiesThusFar, blacklist);
+                    if (neighborThreat > threat) {
+                        threat = neighborThreat;
+                    }
+                }
+            }
+        }
+        
+        return threat;
+    }
+    
     // find the strength of the greatest nearby threat to a given country;
     // this is used to help determine how strong a given border should be
     //
     // search all neighbors out from the given country <toCountry> to a certain depth;
-    // for each country in that neighborhood (that we don't own)
-    // adding together its armies and the income of the player that owns it
+    // for each country in that neighborhood (that we don't own),
+    // add together its armies and the income of the player that owns it;
     // return the highest such sum that we find
-    protected int findGreatestThreat(int toCountry) {
+/*    protected int findGreatestThreat(int toCountry) {
         int depth = 3; // the depth out to which we want to search
         int greatestThreat = 0; // will contain the magnitude of the greatest threat, which we will return
         
@@ -570,6 +633,7 @@ public class Viking implements LuxAgent
         
         return greatestThreat;
     }
+*/
     
     // called by placeArmies()
     // given a number of armies and a set of paths to take over, this function calculates the number of armies required to do so
@@ -647,14 +711,13 @@ public class Viking implements LuxAgent
     // calculates the cost of taking over a clade
     // a clade is a monophyletic tree of paths, i.e. a path and all of its forks (and all of their forks, etc.)
     // clades are not represented in our code as single objects, so this function must find the forks of the initial path itself
-    // the function is passed an entire takeover plan ("plan"), which may contain multiple clades, and an index, which tells it which original path in the plan to work on
+    // the function is passed the entire battle plan ("plan"), which may contain multiple clades, and an index, which tells it which original path in the plan to work on
     // it follows that original path only, and finds all of its forks, and calls itself recursively to find all of its forks' forks, etc.
     // and adds up all of their costs together and returns that number
     protected int calculateCladeCost(ArrayList<int[]> plan, int index) {
         int cost = 0;
         int[] path = plan.get(index);
         cost += getPathCostWithBorders(path); // calculate the cost of the main path
-        //remove plan[index]
         
         chatCountryNames("calculateCladeCost", path);
         testChat("calculateCladeCost","Cost to take over the above path: " + cost);
@@ -1368,6 +1431,17 @@ public class Viking implements LuxAgent
             names[i] = countries[codes[i]].getName().replace(",",""); // get rid of commas in country names because that's confusing when we output the whole array as a string
         }
         return names;
+    }
+    
+    // return the name of a country code
+    protected String getCountryName(int code) {
+        String name;
+        if (code >= 0 && code < countries.length) {
+            name = countries[code].getName().replace(",",""); // get rid of commas in country name
+        } else {
+            name = "" + code;
+        }
+        return name;
     }
 
     // chat a list of countries by name, given an array of country codes
