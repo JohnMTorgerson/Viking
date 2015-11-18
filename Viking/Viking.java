@@ -74,7 +74,7 @@ public class Viking implements LuxAgent
     protected void testChat(String topic, String message) {
         String[] topics = {
 //            "placeInitialArmies",
-//            "placeArmies",
+            "placeArmies",
 //            "attackPhase",
 //            "moveArmiesIn",
             
@@ -117,6 +117,84 @@ public class Viking implements LuxAgent
     public void cardsPhase( Card[] cards ) {
     }
     
+    public void newPlaceArmies(int numberOfArmies) {
+        testChat("placeArmies", "*********** PLACE ARMIES ***********");
+        
+        // empty battlePlan of any info from previous turn
+        battlePlan.clear();
+        
+        // find list of objectives to knockout enemy bonuses
+        ArrayList<HashMap> objectiveList = findKnockoutObjectives();
+        
+        // find and add list of continent takeover objectives
+        objectiveList.addAll(findTakeoverObjectives());
+        //        chatObjectives("placeArmies", takeoverObjectiveList);
+        
+        // sort all the objectives by score
+        sortObjectives(objectiveList, "score");
+        
+        testChat("placeArmies", "--- Sorted Objectives: ---");
+        testChat("placeArmies", "size: " + objectiveList.size());
+        for (HashMap objective : objectiveList) {
+            testChat("placeArmies", "loop is working");
+            String message = "";
+            message += (String) objective.get("type");
+            message += " ";
+            message += board.getContinentName((Integer) objective.get("continentID"));
+            message += " - score: ";
+            String score = "" + (Float) objective.get("score");
+            message += score.substring(0, 5); ;
+            message += ", bonus: ";
+            message += (Integer) objective.get("bonus");
+            message += ", cost: ";
+            message += (Integer) objective.get("cost");
+            testChat("placeArmies", message);
+            
+        }
+        //chatObjectives("placeArmies", objectiveList);
+
+        
+            // for now, just add the first two to the battlePlan, trimming them for collisions
+    /*        int max = Math.min(2, knockoutObjectiveList.size());
+            for (int i=0; i<max; i++) {
+                HashMap objective = knockoutObjectiveList.get(i);
+                ArrayList<int[]> objectivePlan = (ArrayList<int[]>) objective.get("plan");
+                int[] objectivePath = objectivePlan.get(0);
+                battlePlan.add(trimFork(battlePlan, objectivePath));
+            }
+
+            
+            
+                
+            testChat("placeArmies","***** Goal Continent: " + board.getContinentName(goalCont) + " *****");
+            
+            // next we need to pick the right countries to place our armies on in order to take over the continent
+            // the pickBestTakeoverPaths function will simulate taking over the continent
+            // from multiple countries and give us back the best set of paths to do so
+            // the first country in each path (or route) is the one we want to place our armies on
+            
+            ArrayList<int[]> thisContPlan = pickBestTakeoverPaths(goalContCountries); // get the best paths to take over the goalCont
+            
+            // now check all the paths in our new continent against all the paths already in battlePlan (from other continents)
+            // to see if they collide; if they do, trim the new path so that it will be treated like a fork
+            // this will only happen if there was an earlier continent that we didn't own any countries in,
+            // which we had to get to first, in which case, some countries from THIS continent might already be in some paths in battlePlan
+            // there are some cases that this fix does not solve, but they should be reasonably rare
+            for (int j=0; j<thisContPlan.size(); j++) {
+                int[] trimmedPath = trimFork(battlePlan, thisContPlan.get(j));
+                battlePlan.add(trimmedPath);
+            }
+            
+            setBorderStrength(goalContCountries);
+            
+            // place only the number of armies needed to takeover the continent on the starting countries of all the paths
+            // store any remaining armies available in numberOfArmies
+            numberOfArmies = placeArmiesOnRoutes(battlePlan,numberOfArmies);
+ 
+*/
+
+    }
+    
     // place armies at the beginning of each turn
     public void placeArmies( int numberOfArmies ) {
         testChat("placeArmies", "*********** PLACE ARMIES ***********");
@@ -129,8 +207,8 @@ public class Viking implements LuxAgent
         
         // sort the knockout objectives first by the bonus of the continent to knock out
         // and then by enemy income, so we can knockout the biggest bonuses by the strongest enemy
-        sortKnockoutObjectives(knockoutObjectiveList, "bonus");
-        sortKnockoutObjectives(knockoutObjectiveList, "enemyIncome");
+        sortObjectives(knockoutObjectiveList, "bonus");
+        sortObjectives(knockoutObjectiveList, "enemyIncome");
         
 //        testChat("placeArmies", "--- Sorted Knockout Objectives: --- Size: " + knockoutObjectiveList.size());
 //        chatObjectives("placeArmies", knockoutObjectiveList);
@@ -192,6 +270,7 @@ public class Viking implements LuxAgent
                 
 //                testChat("placeArmies", "Number of armies left after placing on continent: " + numberOfArmies);
             //}
+
         }
         
 //        testChat("placeArmies", "Paths we picked: ");
@@ -203,6 +282,8 @@ public class Viking implements LuxAgent
 //            borderCountries.add(key);
 //        }
 //        chatCountryNames("placeArmies",borderCountries);
+ 
+
     }
     
     // attack!
@@ -323,6 +404,9 @@ public class Viking implements LuxAgent
         for(int continent = 0; continent < numConts; continent++) {
             HashMap<String, Object> objective = new HashMap<String, Object>(); // the Objective hashmap for this continent
             
+            // set objective type
+            objective.put("type", "takeover");
+            
             // set continent code
             objective.put("continentID", continent);
             
@@ -374,6 +458,10 @@ public class Viking implements LuxAgent
             }
             objective.put("cost", cost);
             
+            // calculate and set score
+            float score = (float) bonus / (cost + 0.0001f);
+            objective.put("score", score);
+            
             // add objective to objectiveList arraylist
             objectiveList.add(objective);
         }
@@ -381,30 +469,54 @@ public class Viking implements LuxAgent
         return objectiveList;
     }
     
-    // sort in place an arraylist of knockout objectives
+    // sort in place an arraylist of objectives
     // by the value of sortKey (only if that value is an integer)
-    protected void sortKnockoutObjectives(ArrayList<HashMap> list, String sortKey) {
-        // if there's nothing in the list, or if the value we're trying to sort by is not an integer
+    protected void sortObjectives(ArrayList<HashMap> list, String sortKey) {
+        // if there's nothing in the list
         // simply return the original list
-        if (list.size() == 0 || !(list.get(0).get(sortKey) instanceof Integer)) {
+        if (list.size() == 0) {
             return;
         }
         
-        // bubble-sort the arraylist by the value of sortKey
-        boolean flag = true;
-        HashMap temp = new HashMap();
-        int v1, v2;
-        int size = list.size();
-        while(flag) {
-            flag = false;
-            for (int i=0; i<size-1; i++) {
-                v1 = (Integer) list.get(i).get(sortKey);
-                v2 = (Integer) list.get(i+1).get(sortKey);
-                if (v1 < v2) {
-                    temp = list.get(i); // store the value at i
-                    list.remove(i); // remove the ith element, and everything after it shifts to the left
-                    list.add(i+1,temp); // insert the original ith element at i+1, and everything after it shifts to the right
-                    flag = true;
+        // if the values at sortKey are integers
+        if ((list.get(0).get(sortKey) instanceof Integer)) {
+            // bubble-sort the arraylist by the value of sortKey
+            boolean flag = true;
+            HashMap temp = new HashMap();
+            int v1, v2;
+            int size = list.size();
+            while(flag) {
+                flag = false;
+                for (int i=0; i<size-1; i++) {
+                    v1 = (Integer) list.get(i).get(sortKey);
+                    v2 = (Integer) list.get(i+1).get(sortKey);
+                    if (v1 < v2) {
+                        temp = list.get(i); // store the value at i
+                        list.remove(i); // remove the ith element, and everything after it shifts to the left
+                        list.add(i+1,temp); // insert the original ith element at i+1, and everything after it shifts to the right
+                        flag = true;
+                    }
+                }
+            }
+        }
+        // if the values at sortKey are floats
+        else if ((list.get(0).get(sortKey) instanceof Float)) {
+            // bubble-sort the arraylist by the value of sortKey
+            boolean flag = true;
+            HashMap temp = new HashMap();
+            float v1, v2;
+            int size = list.size();
+            while(flag) {
+                flag = false;
+                for (int i=0; i<size-1; i++) {
+                    v1 = (Float) list.get(i).get(sortKey);
+                    v2 = (Float) list.get(i+1).get(sortKey);
+                    if (v1 < v2) {
+                        temp = list.get(i); // store the value at i
+                        list.remove(i); // remove the ith element, and everything after it shifts to the left
+                        list.add(i+1,temp); // insert the original ith element at i+1, and everything after it shifts to the right
+                        flag = true;
+                    }
                 }
             }
         }
@@ -425,14 +537,19 @@ public class Viking implements LuxAgent
             if (BoardHelper.anyPlayerOwnsContinent(continent, countries) && owner != ID) { // if an enemy fully owns this continent
                 HashMap<String, Object> objective = new HashMap<String, Object>(); // the Objective hashmap for this continent
                 
+                // set objective type
+                objective.put("type", "knockout");
+                
                 // set continent code
                 objective.put("continentID", continent);
                 
                 // set continent bonus
-                objective.put("bonus", board.getContinentBonus(continent));
+                int bonus = board.getContinentBonus(continent);
+                objective.put("bonus", bonus);
                 
                 // set enemy income
-                objective.put("enemyIncome", board.getPlayerIncome(owner));
+                int enemyIncome = board.getPlayerIncome(owner);
+                objective.put("enemyIncome", enemyIncome);
                 
                 // find and set route
                 //
@@ -448,7 +565,11 @@ public class Viking implements LuxAgent
                 int cost = getPathCost(route);
                 objective.put("cost", cost);
                 
-                
+                // calculate and set score
+                int numberOfEnemies = board.getNumberOfPlayersLeft() - 1;
+                int income = board.getPlayerIncome(ID);
+                float score = ((float) bonus * enemyIncome) / ( (cost + 0.0001f) * numberOfEnemies * (income + 0.0001f));
+                objective.put("score", score);
                 
                 objectiveList.add(objective);
             }
@@ -493,9 +614,9 @@ public class Viking implements LuxAgent
             // sets <strength> to the biggest nearby threat, scaled down by the relative value of the bonus we're protecting
             // for a small bonus it will have an insufficient border, and the largest bonus on the board
             // will have a bonus equal to <greatestThreat>
-            // except if <income>/<numBorders> is smaller than that number, in which case we limit <strength> to that
+            // except if <income>/3 is smaller than that number, in which case we limit <strength> to that
             // in order to keep the border garrison requirements from being out of control
-            strength = (int) Math.ceil(Math.min(greatestThreat * areaValue, (double) income / (double) numBorders));
+            strength = (int) Math.ceil(Math.min(greatestThreat * areaValue, (double) income / 3));
             
             testChat("calculateBorderStrength", "Border strength of " + countries[country].getName() + " is " + strength);
         }
@@ -508,9 +629,11 @@ public class Viking implements LuxAgent
         return calculateBorderStrength(country, area, numBorders, areaBonus);
     }
     
+    // called by calculateBorderStrength()
+    // returns the magnitude of the greatest nearby enemy threat to the given border country
     protected int findGreatestThreat(int borderCountry, int[] area) {
         int maxDepth = 3; // the depth we want to search out to
-        int currentDepth = 0; // begin with a depth of 1, since we're starting on the neighbors of <borderCountry>
+        int currentDepth = 0; // begin with a depth of 0
         int armiesThusFar = 0; // the armies on a given path so far
         ArrayList<Integer> blacklist = new ArrayList<Integer>(); // the blacklist keeps track of the players whose countries we've seen so far along a given path
         blacklist.add(ID); // begin by adding ourselves, so we don't ever consider ourselves a threat
@@ -522,7 +645,8 @@ public class Viking implements LuxAgent
     }
     
     // called by findGreatestThreat()
-    // recursively finds neighbors of given country, and finds the threat level
+    // recursively finds neighbors of given country, and finds the threat level of those neighbors,
+    // then compares all the threats it finds to each other and returns the highest one
     protected int findNeighborsThreat(int country, int[] area, int currentDepth, int maxDepth, int armiesThusFar, ArrayList<Integer> oldBlacklist) {
         // make deep copy of oldBlacklist, so we don't mess with other branches
         ArrayList<Integer> blacklist = new ArrayList<Integer>();
@@ -533,6 +657,7 @@ public class Viking implements LuxAgent
         int armies = countries[country].getArmies(); // the armies on <country>
         
         // if we're not on the first country (the actual border country)
+        // calculate the threat
         if (currentDepth > 0) {
             // if <owner> is not in blacklist, then we haven't run across a country owned by this player before
             // so we assess the threat of this country
@@ -544,10 +669,8 @@ public class Viking implements LuxAgent
                 blacklist.add(owner); // now we've seen this owner on this path, so add it to blacklist
             }
             
-            
             // add the armies on this country to the total armies we've seen so far along this path
             // to pass to the new neighbors
-        
             armiesThusFar += armies;
         }
         
@@ -1517,7 +1640,7 @@ public class Viking implements LuxAgent
         if (value instanceof String) {
             return (String) value;
         }
-        if (value instanceof Integer) {
+        if (value instanceof Integer || value instanceof Float) {
             return "" + value;
         }
         if (value instanceof int[]) {
@@ -1531,7 +1654,7 @@ public class Viking implements LuxAgent
             return listString;
         }
         
-        return null;
+        return "";
     }
     
     // helper function to return an array of the countries a player owns in a given continent
