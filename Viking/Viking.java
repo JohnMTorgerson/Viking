@@ -117,7 +117,7 @@ public class Viking implements LuxAgent
     public void cardsPhase( Card[] cards ) {
     }
     
-    public void newPlaceArmies(int numberOfArmies) {
+    public void placeArmies(int numberOfArmies) {
         testChat("placeArmies", "*********** PLACE ARMIES ***********");
         
         // empty battlePlan of any info from previous turn
@@ -128,7 +128,6 @@ public class Viking implements LuxAgent
         
         // find and add list of continent takeover objectives
         objectiveList.addAll(findTakeoverObjectives());
-        //        chatObjectives("placeArmies", takeoverObjectiveList);
         
         // sort all the objectives by score
         sortObjectives(objectiveList, "score");
@@ -136,67 +135,84 @@ public class Viking implements LuxAgent
         testChat("placeArmies", "--- Sorted Objectives: ---");
         testChat("placeArmies", "size: " + objectiveList.size());
         for (HashMap objective : objectiveList) {
-            testChat("placeArmies", "loop is working");
             String message = "";
             message += (String) objective.get("type");
-            message += " ";
-            message += board.getContinentName((Integer) objective.get("continentID"));
             message += " - score: ";
-            String score = "" + (Float) objective.get("score");
-            message += score.substring(0, 5); ;
+            String scoreStr = "" + (Float) objective.get("score");
+            message += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
+            message += " - " + board.getContinentName((Integer) objective.get("continentID"));
             message += ", bonus: ";
             message += (Integer) objective.get("bonus");
             message += ", cost: ";
             message += (Integer) objective.get("cost");
             testChat("placeArmies", message);
-            
         }
+        testChat("placeArmies", "--- Objectives we're choosing: ---");
         //chatObjectives("placeArmies", objectiveList);
 
+        // run old placeArmies for the moment, for testing purposes
+//        oldPlaceArmies(numberOfArmies);
         
-            // for now, just add the first two to the battlePlan, trimming them for collisions
-    /*        int max = Math.min(2, knockoutObjectiveList.size());
-            for (int i=0; i<max; i++) {
-                HashMap objective = knockoutObjectiveList.get(i);
-                ArrayList<int[]> objectivePlan = (ArrayList<int[]>) objective.get("plan");
-                int[] objectivePath = objectivePlan.get(0);
-                battlePlan.add(trimFork(battlePlan, objectivePath));
+        // loop through all objectives in order of score
+        // picking as many as we can until we're out of armies
+        // and placing armies on the appropriate routes
+        for (HashMap objective : objectiveList) {
+            // first check if we're out of armies, and if we are, stop trying to place them
+            if (numberOfArmies <= 0) {
+                break;
             }
 
+            // the type of the objective (whether it's a knockout or takeover)
+            String type = (String) objective.get("type");
             
-            
+            // if the objective is a knockout
+            if (type == "knockout") {
+                // if we can afford it
+                if ((Integer) objective.get("cost") <= numberOfArmies) {
+                    testChat("placeArmies","Knockout " + board.getContinentName((Integer) objective.get("continentID")));
+                    
+                    // add the knockout path to battlePlan, trimming it for forks
+                    ArrayList<int[]> objectivePlan = (ArrayList<int[]>) objective.get("plan");
+                    int[] objectivePath = objectivePlan.get(0);
+                    battlePlan.add(trimFork(battlePlan, objectivePath));
+                }
+            }
+            // if the objective is a takeover
+            else if (type == "takeover") {
+                testChat("placeArmies","Takeover " + board.getContinentName((Integer) objective.get("continentID")));
                 
-            testChat("placeArmies","***** Goal Continent: " + board.getContinentName(goalCont) + " *****");
-            
-            // next we need to pick the right countries to place our armies on in order to take over the continent
-            // the pickBestTakeoverPaths function will simulate taking over the continent
-            // from multiple countries and give us back the best set of paths to do so
-            // the first country in each path (or route) is the one we want to place our armies on
-            
-            ArrayList<int[]> thisContPlan = pickBestTakeoverPaths(goalContCountries); // get the best paths to take over the goalCont
-            
-            // now check all the paths in our new continent against all the paths already in battlePlan (from other continents)
-            // to see if they collide; if they do, trim the new path so that it will be treated like a fork
-            // this will only happen if there was an earlier continent that we didn't own any countries in,
-            // which we had to get to first, in which case, some countries from THIS continent might already be in some paths in battlePlan
-            // there are some cases that this fix does not solve, but they should be reasonably rare
-            for (int j=0; j<thisContPlan.size(); j++) {
-                int[] trimmedPath = trimFork(battlePlan, thisContPlan.get(j));
-                battlePlan.add(trimmedPath);
+                // we need to pick the right countries to place our armies on in order to take over the area
+                // the pickBestTakeoverPaths function will simulate taking over the area
+                // from multiple countries and give us back the best set of paths to do so
+                int[] takeoverArea = (int[]) objective.get("area");
+                ArrayList<int[]> takeoverPlan = pickBestTakeoverPaths(takeoverArea); // get the best paths to take over the goalCont
+                
+                // now check all the paths in our new continent against all the paths already in battlePlan (from other objectives)
+                // to see if they collide; if they do, trim the new path so that it will be treated like a fork
+                // this will happen either if a knockout objective needed to cross countries in this area,
+                // or if there was an earlier takeover objective that we didn't own any countries in,
+                // which we had to cross countries in this area to get to;
+                // there are some cases that this fix does not solve (x-crossings), but they should be reasonably rare;
+                //
+                // after trimming for forks, add the paths to battlePlan
+                for (int[] path : takeoverPlan) {
+                    int[] trimmedPath = trimFork(battlePlan, path);
+                    battlePlan.add(trimmedPath);
+                }
+                
+                // calculate and store the desired border garrisons on the area we're taking over
+                // so that when we place the armies on battlePlan, it will know how many extra to place for the garrisons
+                setBorderStrength(takeoverArea);
             }
             
-            setBorderStrength(goalContCountries);
-            
-            // place only the number of armies needed to takeover the continent on the starting countries of all the paths
+            // place the number of armies needed to fulfull the objective on the starting countries of all the paths
             // store any remaining armies available in numberOfArmies
             numberOfArmies = placeArmiesOnRoutes(battlePlan,numberOfArmies);
- 
-*/
-
+        }
     }
     
     // place armies at the beginning of each turn
-    public void placeArmies( int numberOfArmies ) {
+    public void oldPlaceArmies( int numberOfArmies ) {
         testChat("placeArmies", "*********** PLACE ARMIES ***********");
         
         // empty battlePlan of any info from previous turn
@@ -222,8 +238,8 @@ public class Viking implements LuxAgent
             battlePlan.add(trimFork(battlePlan, objectivePath));
         }
         
-        ArrayList<HashMap> takeoverObjectiveList = findTakeoverObjectives();
-        testChat("placeArmies", "--- Takeover Objectives: --- ");
+//       ArrayList<HashMap> takeoverObjectiveList = findTakeoverObjectives();
+//        testChat("placeArmies", "--- Takeover Objectives: --- ");
 //        chatObjectives("placeArmies", takeoverObjectiveList);
         
         // first we'll decide what continents to pursue and thus which ones we'll place armies on
@@ -459,7 +475,8 @@ public class Viking implements LuxAgent
             objective.put("cost", cost);
             
             // calculate and set score
-            float score = (float) bonus / (cost + 0.0001f);
+            float turns = Math.max(1, (float) cost/ ((float) board.getPlayerIncome(ID) + .00001f));
+            float score = 10f * (float) bonus / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5));
             objective.put("score", score);
             
             // add objective to objectiveList arraylist
@@ -566,9 +583,15 @@ public class Viking implements LuxAgent
                 objective.put("cost", cost);
                 
                 // calculate and set score
-                int numberOfEnemies = board.getNumberOfPlayersLeft() - 1;
-                int income = board.getPlayerIncome(ID);
-                float score = ((float) bonus * enemyIncome) / ( (cost + 0.0001f) * numberOfEnemies * (income + 0.0001f));
+                int numberOfEnemies = board.getNumberOfPlayersLeft() - 1; // number of enemies
+                int totalEnemyIncome = 0;
+                for (int player=0; player<numberOfEnemies + 1; player++) { // loop through all players
+                    if (player != ID) { // if the player isn't us
+                        totalEnemyIncome += board.getPlayerIncome(player); // add its income to totalEnemyIncome
+                    }
+                }
+                int income = board.getPlayerIncome(ID); // our income
+                float score = 10f * ((float) bonus * enemyIncome) / ( (cost + 0.00001f) * (totalEnemyIncome + 0.00001f));
                 objective.put("score", score);
                 
                 objectiveList.add(objective);
@@ -616,7 +639,7 @@ public class Viking implements LuxAgent
             // will have a bonus equal to <greatestThreat>
             // except if <income>/3 is smaller than that number, in which case we limit <strength> to that
             // in order to keep the border garrison requirements from being out of control
-            strength = (int) Math.ceil(Math.min(greatestThreat * areaValue, (double) income / 3));
+            strength = (int) Math.ceil(Math.min(greatestThreat * areaValue, (double) income / 2));
             
             testChat("calculateBorderStrength", "Border strength of " + countries[country].getName() + " is " + strength);
         }
