@@ -118,7 +118,12 @@ public class Viking implements LuxAgent
     }
     
     public void placeArmies(int numberOfArmies) {
-        testChat("placeArmies", "*********** PLACE ARMIES ***********");
+        testChat("placeArmies",
+                 "\n**********************************************" +
+                 "\n**********************************************" +
+                 "\n**************** PLACE ARMIES ****************" +
+                 "\n**********************************************" +
+                 "\n**********************************************");
         
         // empty battlePlan of any info from previous turn
         battlePlan.clear();
@@ -132,54 +137,68 @@ public class Viking implements LuxAgent
         // sort all the objectives by score
         sortObjectives(objectiveList, "score");
         
-        testChat("placeArmies", "--- Sorted Objectives: ---");
-        testChat("placeArmies", "size: " + objectiveList.size());
-        for (HashMap objective : objectiveList) {
-            String message = "";
-            message += (String) objective.get("type");
-            message += " - score: ";
-            String scoreStr = "" + (Float) objective.get("score");
-            message += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
-            message += " - " + board.getContinentName((Integer) objective.get("continentID"));
-            message += ", bonus: ";
-            message += (Integer) objective.get("bonus");
-            message += ", cost: ";
-            message += (Integer) objective.get("cost");
-            testChat("placeArmies", message);
-        }
-        testChat("placeArmies", "--- Objectives we're choosing: ---");
-        //chatObjectives("placeArmies", objectiveList);
-
         // run old placeArmies for the moment, for testing purposes
 //        oldPlaceArmies(numberOfArmies);
         
         // loop through all objectives in order of score
         // picking as many as we can until we're out of armies
         // and placing armies on the appropriate routes
-        for (HashMap objective : objectiveList) {
-            // first check if we're out of armies, and if we are, stop trying to place them
-            if (numberOfArmies <= 0) {
-                break;
+        while (numberOfArmies > 0 && objectiveList.size() > 0) {
+            
+            testChat("placeArmies", "~~~~~~~~~~~ LOOP ~~~~~~~~~~~ (Armies Left: " + numberOfArmies + ")");
+            
+            testChat("placeArmies", "--- Possible Objectives (size: " + objectiveList.size() + "): ---");
+            for (HashMap objective : objectiveList) {
+                String message = "";
+                message += (String) objective.get("type");
+                message += " - score: ";
+                String scoreStr = "" + (Float) objective.get("score");
+                message += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
+                message += " - " + board.getContinentName((Integer) objective.get("continentID"));
+                message += ", bonus: ";
+                message += (Integer) objective.get("bonus");
+                message += ", cost: ";
+                message += (Integer) objective.get("cost");
+                testChat("placeArmies", message);
             }
-
+            int testTemp = numberOfArmies;
+            String chatString = "";
+            
+            
+            
+            // reset the <picked> flag to false until we've picked an objective
+            boolean picked = false;
+            
+            // the objective with the highest score
+            // we'll pick this objective except in the special case that it's a knockout objective
+            // that costs more than we can afford
+            HashMap<String, Object> objective = objectiveList.get(0);
+            
             // the type of the objective (whether it's a knockout or takeover)
             String type = (String) objective.get("type");
             
             // if the objective is a knockout
             if (type == "knockout") {
-                // if we can afford it
+                // pick this objective if we can afford it
                 if ((Integer) objective.get("cost") <= numberOfArmies) {
-                    testChat("placeArmies","Knockout " + board.getContinentName((Integer) objective.get("continentID")));
+                    picked = true; // set <picked> flag to true
+                    chatString = "****** Knockout " + board.getContinentName((Integer) objective.get("continentID")) + " - ";
                     
                     // add the knockout path to battlePlan, trimming it for forks
                     ArrayList<int[]> objectivePlan = (ArrayList<int[]>) objective.get("plan");
                     int[] objectivePath = objectivePlan.get(0);
                     battlePlan.add(trimFork(battlePlan, objectivePath));
+                } else {
+                    // if the knockout is too expensive, put it in the back
+                    // we will then run the loop again without reassessing the objectives.
+                    objectiveList.remove(0);
+                    objectiveList.add(objective);
                 }
             }
             // if the objective is a takeover
             else if (type == "takeover") {
-                testChat("placeArmies","Takeover " + board.getContinentName((Integer) objective.get("continentID")));
+                picked = true;
+                chatString = "****** Takeover " + board.getContinentName((Integer) objective.get("continentID")) + " - ";
                 
                 // we need to pick the right countries to place our armies on in order to take over the area
                 // the pickBestTakeoverPaths function will simulate taking over the area
@@ -205,9 +224,42 @@ public class Viking implements LuxAgent
                 setBorderStrength(takeoverArea);
             }
             
-            // place the number of armies needed to fulfull the objective on the starting countries of all the paths
-            // store any remaining armies available in numberOfArmies
-            numberOfArmies = placeArmiesOnRoutes(battlePlan,numberOfArmies);
+            // if we picked an objective this loop
+            // place armies on its routes, then remove it from the list
+            // and recalculate all the remaining objectives in case the one we picked affects them in any way
+            // and the sort the recalculated list
+            if (picked) {
+                // place the number of armies needed to fulfull the objective on the starting countries of all the paths
+                // store any remaining armies available in numberOfArmies
+                numberOfArmies = placeArmiesOnRoutes(battlePlan,numberOfArmies);
+                
+                testTemp = testTemp - numberOfArmies;
+                testChat("placeArmies", chatString + "placed " + testTemp + " armies");
+                
+                // since we've made plans for this objective, we don't need to look at it again
+                objectiveList.remove(0);
+                
+                // loop through the list of remaining objectives
+                // and recalculate them all
+                for (int i=0; i<objectiveList.size(); i++) {
+                    HashMap<String, Object> element = objectiveList.get(i);
+                    
+                    // if this is a knockout objective
+                    if ((String) element.get("type") == "knockout") {
+                        // recalculate it
+                        HashMap<String, Object> newElement = calculateKnockoutObjective((Integer) element.get("continentID"));
+                        if (newElement != null) { // if the recalculated objective isn't null
+                            objectiveList.set(i, newElement); // replace the old one with it
+                        } else { // otherwise the element is null (if the continent is/will be no longer owned by an enemy; i.e. we picked a path through it)
+                            objectiveList.remove(i); // remove it from the list
+                            i--; // decrement i, because all the elements moved to the left (I know, I know)
+                        }
+                    }
+                }
+                
+                // re-sort the list
+                sortObjectives(objectiveList, "score");
+            }
         }
     }
     
@@ -550,56 +602,68 @@ public class Viking implements LuxAgent
         // if the continent is fully owned, find all the values we want and put them in a hashmap
         // add the hashmap to objectiveList
         for(int continent=0; continent<numConts; continent++) { // loop through all the continents
-            int owner = countries[BoardHelper.getCountryInContinent(continent, countries)].getOwner(); // the owner of some country in this continent
-            if (BoardHelper.anyPlayerOwnsContinent(continent, countries) && owner != ID) { // if an enemy fully owns this continent
-                HashMap<String, Object> objective = new HashMap<String, Object>(); // the Objective hashmap for this continent
-                
-                // set objective type
-                objective.put("type", "knockout");
-                
-                // set continent code
-                objective.put("continentID", continent);
-                
-                // set continent bonus
-                int bonus = board.getContinentBonus(continent);
-                objective.put("bonus", bonus);
-                
-                // set enemy income
-                int enemyIncome = board.getPlayerIncome(owner);
-                objective.put("enemyIncome", enemyIncome);
-                
-                // find and set route
-                //
-                // first, actually find the cheapest route to the continent
-                // we pass 'true' to the function to tell it to account for the number of armies
-                // on the border country we end up at, because we want to find the weakest way into the continent
-                int[] route = getCheapestRouteToCont(continent, true);
-                ArrayList<int[]> plan = new ArrayList<int[]>();
-                plan.add(route); // package the path into an array list
-                objective.put("plan",plan);
-                
-                // find and set cost
-                int cost = getPathCost(route);
-                objective.put("cost", cost);
-                
-                // calculate and set score
-                int numberOfEnemies = board.getNumberOfPlayersLeft() - 1; // number of enemies
-                int totalEnemyIncome = 0;
-                for (int player=0; player<numberOfEnemies + 1; player++) { // loop through all players
-                    if (player != ID) { // if the player isn't us
-                        totalEnemyIncome += board.getPlayerIncome(player); // add its income to totalEnemyIncome
-                    }
-                }
-                int income = board.getPlayerIncome(ID); // our income
-                float score = 10f * ((float) bonus * enemyIncome) / ( (cost + 0.00001f) * (totalEnemyIncome + 0.00001f));
-                objective.put("score", score);
-                
+            HashMap<String, Object> objective = new HashMap<String, Object>(); // the Objective hashmap for this continent
+            objective = calculateKnockoutObjective(continent);
+            if (objective != null) {
                 objectiveList.add(objective);
             }
+        
         }
-        
-        
         return objectiveList;
+    }
+
+    // creates/calculates knockout objective for the given continent
+    // if the continent is not fully owned by an enemy, returns null
+    protected HashMap<String, Object> calculateKnockoutObjective(int continent) {
+        int[] area = getCountriesInContinent(continent);
+        int owner = countries[BoardHelper.getCountryInContinent(continent, countries)].getOwner(); // the owner of some country in this continent
+        if (BoardHelper.anyPlayerOwnsContinent(continent, countries) && owner != ID && !battlePlanHasCountryIn(area)) { // if an enemy fully owns this continent
+            HashMap<String, Object> objective = new HashMap<String, Object>(); // the Objective hashmap for this continent
+            
+            // set objective type
+            objective.put("type", "knockout");
+            
+            // set continent code
+            objective.put("continentID", continent);
+            
+            // set continent bonus
+            int bonus = board.getContinentBonus(continent);
+            objective.put("bonus", bonus);
+            
+            // set enemy income
+            int enemyIncome = board.getPlayerIncome(owner);
+            objective.put("enemyIncome", enemyIncome);
+            
+            // find and set route
+            //
+            // first, actually find the cheapest route to the continent
+            // we pass 'true' to the function to tell it to account for the number of armies
+            // on the border country we end up at, because we want to find the weakest way into the continent
+            int[] route = getCheapestRouteToCont(continent, true);
+            ArrayList<int[]> plan = new ArrayList<int[]>();
+            plan.add(route); // package the path into an array list
+            objective.put("plan",plan);
+            
+            // find and set cost
+            int cost = getPathCost(route);
+            objective.put("cost", cost);
+            
+            // calculate and set score
+            int numberOfEnemies = board.getNumberOfPlayersLeft() - 1; // number of enemies
+            int totalEnemyIncome = 0;
+            for (int player=0; player<numberOfEnemies + 1; player++) { // loop through all players
+                if (player != ID) { // if the player isn't us
+                    totalEnemyIncome += board.getPlayerIncome(player); // add its income to totalEnemyIncome
+                }
+            }
+            int income = board.getPlayerIncome(ID); // our income
+            float score = 10f * ((float) bonus * enemyIncome) / ( (cost + 0.00001f) * (totalEnemyIncome + 0.00001f));
+            objective.put("score", score);
+            
+            return objective;
+        } else {
+            return null;
+        }
     }
     
     // checks if country is in borderArmies hashmap, and if it is, returns the value, if not, returns 0
@@ -1171,7 +1235,8 @@ public class Viking implements LuxAgent
             testCodeHistory = Q.topHistory();
             testCode = Q.pop();
             
-            if ( countries[testCode].getOwner() == owner ) {
+            // if we own <testCode> or if we are planning to this turn
+            if ( getProjectedCountryOwner(testCode) == owner ) {
                 // we have found the best path. return it
                 return testCodeHistory;
             }
@@ -1715,7 +1780,9 @@ public class Viking implements LuxAgent
         // loop through all the countries in area; if player owns them, add them to the results ArrayList
         List<Integer> results = new ArrayList<Integer>();
         for (int i=0; i<area.length; i++) {
-            if (countries[area[i]].getOwner() == player) {
+            // if the player is us, we need to check for projected ownership (if we own it or if we plan to)
+            // if it's not us, just check for ownership the regular way
+            if ((player == ID && getProjectedCountryOwner(area[i]) == ID) || countries[area[i]].getOwner() == player) {
                 results.add(area[i]);
             }
         }
@@ -1878,6 +1945,39 @@ public class Viking implements LuxAgent
         int size = list.size();
         for (int i=0; i<size; i++) {
             if (list.get(i) == test) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    // get "projected" owner of the given country
+    // returns <ID> if we actually own the country or if the country is in the battlPlan arraylist
+    // because in that second case, that means we're planning on taking it over this turn
+    protected int getProjectedCountryOwner(int country) {
+        int currentOwner = countries[country].getOwner();
+        if (currentOwner == ID || isInBattlePlan(country)) {
+            return ID;
+        }
+        return currentOwner;
+    }
+    
+    // checks if a given country is in the battlePlan arraylist
+    protected boolean isInBattlePlan(int country) {
+        for (int[] path : battlePlan) {
+            for (int checkCountry : path) {
+                if (checkCountry == country) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    // returns true if any country in the given area is contained within <battlePlan>
+    protected boolean battlePlanHasCountryIn(int[] area) {
+        for (int country : area) {
+            if (isInBattlePlan(country)) {
                 return true;
             }
         }
