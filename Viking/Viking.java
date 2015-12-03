@@ -167,6 +167,8 @@ public class Viking implements LuxAgent
                 message += (Integer) objective.get("bonus");
                 message += ", cost: ";
                 message += (Integer) objective.get("cost");
+                message += " - (old score: ";
+                message += (Float) objective.get("oldScore") + ")";
                 testChat("placeArmies", message);
             }
             int testTemp = numberOfArmies;
@@ -576,6 +578,16 @@ public class Viking implements LuxAgent
             }
             int income = board.getPlayerIncome(ID); // our income
             float score = 10f * ((float) bonus * enemyIncome) / ( (cost + 0.00001f) * (totalEnemyIncome + 0.00001f));
+            objective.put("oldScore", score);
+            
+            // calculate and set score
+            float countriesGain = 0.0f; // countriesGain is how much we reduce the bonus of any enemies we travel through, weighted by their relative income
+            for (int i=1; i<route.length; i++) { // loop through each country in the route, except for the first one, which we own
+                countriesGain += board.getPlayerIncome(countries[route[i]].getOwner()); // add the income of the owner of each country
+            }
+            countriesGain /= 3 * totalEnemyIncome + 0.00001f; // divide the total by 3, because every 3 countries is worth 1 income point, and divide by total enemy income
+            float continentGain = ((float) bonus * enemyIncome) / (totalEnemyIncome + 0.00001f); // continentGain is how much we reduce the bonus of the enemy that owns the continent by taking away the continent, weighted by its relative income
+            score = 10f * (countriesGain + continentGain) / (cost + 0.00001f); // score is the total gain divided by the cost
             objective.put("score", score);
             
             return objective;
@@ -1559,7 +1571,7 @@ public class Viking implements LuxAgent
     
     // helper function to return an array of the countries a player owns in a given continent
     // player is the player ID to check; cont is the continent in question
-    protected int[] getPlayerCountriesInContinent(int cont, int player) {
+/*    protected int[] getPlayerCountriesInContinent(int cont, int player) {
         // continent iterator returns all countries in 'cont',
         // player iterator returns all countries out of those owned by 'player'
         // this gives us the list of all the countries we own in the continent
@@ -1583,7 +1595,7 @@ public class Viking implements LuxAgent
     // overloaded version: if no player is provided, assume it should be us
     protected int[] getPlayerCountriesInContinent(int cont) {
         return getPlayerCountriesInContinent(cont, ID);
-    }
+    }*/
 
     
     // helper function to return an array of the countries a player owns in a given list of countries (area)

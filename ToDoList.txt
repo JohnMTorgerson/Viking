@@ -19,3 +19,7 @@ Issues which will need to be addressed in the future.
  - fortifying
 
  - pick countries
+
+ - somehow project what enemy bonuses will be after we do the knockouts in a turn when we’re calculating border costs, so that we don’t add borders for enemy threats that will be cut down in the same turn
+
+ - add a way for the bot to take over the whole map at once when it has enough armies to do it in a single turn
