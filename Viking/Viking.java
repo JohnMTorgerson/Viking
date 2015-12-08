@@ -123,10 +123,14 @@ public class Viking implements LuxAgent
                  "\n**********************************************" +
                  "\n**************** PLACE ARMIES ****************" +
                  "\n**********************************************" +
-                 "\n**********************************************");
+                 "\n**********************************************" +
+                 "\n total enemy income: " + getTotalEnemyIncome());
         
         // empty battlePlan of any info from previous turn
         battlePlan.clear();
+        
+        // clear the global <borderArmies> HashMap, which stores the border garrison strength for each border country of each area we want to take over
+        borderArmies.clear();
         
         // find list of objectives to knockout enemy bonuses
         ArrayList<HashMap> objectiveList = findKnockoutObjectives();
@@ -435,24 +439,35 @@ public class Viking implements LuxAgent
         int cost;
         int[] enemyCountries = getEnemyCountriesInArea(area); // get enemy countries in the area
         int[] entryPath = getCheapestRouteToArea(area, false); // cheapest path to area (in case we don't own any countries); pass 'false' because we don't care about ending up at the weakest border of the area
-        if (entryPath.length > 2) { // if entryPath is larger than two countries, then we have a non-trivial path to the area (meaning we own no countries in the area), which we need to account for in the cost
-            int[] pathAndArea = new int[entryPath.length - 2 + enemyCountries.length]; // new array to hold the path and the countries in the area
-            System.arraycopy(entryPath,1,pathAndArea,0,entryPath.length-2); // copy entryPath into new array, except the first element (which is a country we own, so doesn't count toward cost) and the last element (which is a country in the area, so it's already in enemyCountries)
-            System.arraycopy(enemyCountries,0,pathAndArea,entryPath.length-2,enemyCountries.length); // copy the countries in the area into the new array
-            cost = getGlobCost(pathAndArea); // estimate the cost of the area and the path together
-        } else { // in case the entry path is smaller than two countries, we don't need it, because we own at least one country in the area or an adjacent country
-            cost = getGlobCost(enemyCountries); // so in this case, get the cost of just the enemy countries in the area
+        ArrayList<Integer> pathAndAreaList = new ArrayList<Integer>(); // new arraylist to hold the path and the countries in the area; we'll have to use an arraylist for the moment because it's easier than figuring out how big it has to be before we populate it
+        for (int i=1; i<entryPath.length - 1; i++) { // add entryPath to new arraylist, except the first element (which is a country we own, so doesn't count toward cost) and the last element (which is a country in the area, so it's already in enemyCountries)
+            pathAndAreaList.add(entryPath[i]);
         }
+        for (int country : enemyCountries) { // add the enemy countries in the area into the new arraylist
+            pathAndAreaList.add(country);
+        }
+        int[] pathAndArea = convertListToIntArray(pathAndAreaList); // convert the arraylist into an array for use in getGlobCost(); pathAndArea now holds all the enemy countries in the area we're taking over, plus any enemy countries we have to take over to get there
+        cost = getGlobCost(pathAndArea); // estimate the cost of the area and the path together
         for (int country : area) { // now loop through every country in the area to add border garrisons to the cost
             int borderStrength = calculateBorderStrength(country, area, numBorders, bonus); // what the border garrison should be for this country; if it is not a border, this will be 0
-            int borderArmies = getProjectedCountryOwner(country) == ID ? getProjectedArmies(country) - 1 : 0; // how many (extra) armies are on this country if we own it; if we don't own it, 0
-            cost += Math.max(0,borderStrength - borderArmies); // add the border strength we want to the cost minus any armies we already have on that border (or 0 if there are more than enough armies already there)
+            int extantBorderArmies = getProjectedCountryOwner(country) == ID ? getProjectedArmies(country) - 1 : 0; // how many (extra) armies are on this country if we own it; if we don't own it, 0
+            cost += Math.max(0,borderStrength - extantBorderArmies); // add the border strength we want to the cost minus any armies we already have on that border (or 0 if there are more than enough armies already there)
         }
         objective.put("cost", cost);
         
         // calculate and set score
         float turns = Math.max(1, (float) cost/ ((float) board.getPlayerIncome(ID) + .00001f));
         float score = 10f * (float) bonus / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5));
+        objective.put("oldScore", score);
+        
+        // calculate and set score
+        float gain = bonus + (float) area.length / 3.0f + (float) Math.max(0,entryPath.length-2) / 6.0f; // <gain> is the expected increase in our income: the area bonus + the number of countries divided by 3 + any countries we'll take over on the way there divided by 3, and then by 2 (an arbitrary reduction to account for the probability that we won't keep these countries)
+        float enemyLoss = 0.0f; // <enemyLoss> is how much we reduce the bonus of any enemies we travel through, weighted by their relative income
+        for (int country : pathAndArea) { // loop through each enemy country in the (path and) area
+            enemyLoss += board.getPlayerIncome(countries[country].getOwner()); // add the income of the owner of each country
+        }
+        enemyLoss /= 3 * getTotalEnemyIncome() + 0.00001f; // divide the total by 3, because every 3 countries is worth 1 income point, and divide by total enemy income and add a tiny fudge just in case <totalEnemyIncome> is 0
+        score = 10f * ((float) gain + enemyLoss) / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5)); // the score is our gain + the enemies' loss divided by cost and the square root of the number of turns it will take (to discourage large projects)
         objective.put("score", score);
         
         return objective;
@@ -569,13 +584,7 @@ public class Viking implements LuxAgent
             objective.put("cost", cost);
             
             // calculate and set score
-            int numberOfEnemies = board.getNumberOfPlayersLeft() - 1; // number of enemies
-            int totalEnemyIncome = 0;
-            for (int player=0; player<numberOfEnemies + 1; player++) { // loop through all players
-                if (player != ID) { // if the player isn't us
-                    totalEnemyIncome += board.getPlayerIncome(player); // add its income to totalEnemyIncome
-                }
-            }
+            int totalEnemyIncome = getTotalEnemyIncome();
             int income = board.getPlayerIncome(ID); // our income
             float score = 10f * ((float) bonus * enemyIncome) / ( (cost + 0.00001f) * (totalEnemyIncome + 0.00001f));
             objective.put("oldScore", score);
@@ -1873,5 +1882,27 @@ public class Viking implements LuxAgent
             }
         }
         return false;
+    }
+    
+    // return the total income of all enemies remaining in the game
+    protected int getTotalEnemyIncome() {
+        int numberOfPlayers = board.getNumberOfPlayers(); // number of players that started the game
+        int totalEnemyIncome = 0;
+        for (int player=0; player<numberOfPlayers; player++) { // loop through all players
+            if (BoardHelper.playerIsStillInTheGame(player, countries) && player != ID) { // if the player is still in the game, and isn't us
+                totalEnemyIncome += board.getPlayerIncome(player); // add its income to totalEnemyIncome
+            }
+        }
+        return totalEnemyIncome;
+    }
+    
+    // converts an arraylist of integers into an array of integers
+    protected int[] convertListToIntArray(ArrayList<Integer> list) {
+        int size = list.size();
+        int[] array = new int[size];
+        for (int i=0; i<size; i++) {
+            array[i] = list.get(i);
+        }
+        return array;
     }
 }
