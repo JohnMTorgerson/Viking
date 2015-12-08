@@ -88,6 +88,8 @@ public class Viking implements LuxAgent
 //            "calculateBorderStrength",
 //            "findGreatestThreat",
 //            "getAreaBonuses",
+            "calculateLandgrabObjective",
+//            "findWeakestNeighborOwnedByStrongestEnemy",
             ""
         };
         
@@ -137,6 +139,8 @@ public class Viking implements LuxAgent
         
         // find and add list of continent takeover objectives
         objectiveList.addAll(findTakeoverObjectives());
+        
+        HashMap testes = calculateLandgrabObjective(numberOfArmies);
         
         // sort all the objectives by score
         sortObjectives(objectiveList, "score");
@@ -366,6 +370,33 @@ public class Viking implements LuxAgent
     /*
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
+    
+    // the idea of a Landgrab objective is just to take over a bunch of countries
+    // not to take over a continent, just to increase the number of our countries
+    // and decrease that of our enemies; this function takes a number of armies
+    // and finds a path from one of our countries that would take over as many
+    // countries as possible with those armies, balanced by doing as much damage as
+    // possible to the strongest enemies (so it might take a shorter path if that one
+    // does more damage to a very strong enemy than a longer one)
+    protected HashMap<String, Object> calculateLandgrabObjective(int armies) {
+        HashMap<String, Object> objective = new HashMap<String, Object>();
+        int[] ourCountries = getPlayerCountries(); // get list of countries we own
+        
+        testChat("calculateLandgrabObjective", "----- Calculate Landgrab Objective -----");
+        
+        // recursively find weakest (preferring those owned by strongest opponent) enemy neighbors from each country we own to make several paths
+        for (int ourCountry : ourCountries) {
+            testChat("calculateLandgrabObjective", "--- Picking neighbor of " + getCountryName(ourCountry) + ":");
+            int neighbor = findWeakestNeighborOwnedByStrongestEnemy(ourCountry);
+            
+        }
+        
+        // pick the best of those by our gain and enemy losses weighting
+        // package into objective with score
+        // placeArmies() should call this function once per loop and add the objective to its list
+        
+        return objective;
+    }
     
     // findTakeoverObjectives() creates an "objective" hashmap for each continent on the board
     // and packages all the objectives in an array list, which it returns to the placeArmies() function
@@ -1606,6 +1637,79 @@ public class Viking implements LuxAgent
         return getPlayerCountriesInContinent(cont, ID);
     }*/
 
+    // returns the country code of the weakest enemy country that this country can attack,
+    // preferring the one owned by the strongest enemy in the event of a tie;
+    // if there are no enemy neighbors, returns -1
+    protected int findWeakestNeighborOwnedByStrongestEnemy(int country) {
+        int[] neighbors = countries[country].getAdjoiningCodeList(); // get array of neighbors
+        ArrayList<Integer> enemyNeighbors = new ArrayList<Integer>();
+        
+        // loop through all the neighbors, adding all enemy neighbors to the <enemyNeighbors> list
+        for (int neighbor : neighbors) { // loop through all neighbors
+            // if <country> can attack into <neighbor> and we don't own (or plan to own) <neighbor>
+            if (countries[country].canGoto(neighbor) && getProjectedCountryOwner(neighbor) != ID) {
+                enemyNeighbors.add(neighbor); // then add it to the list of enemy neighbors
+            }
+        }
+        
+//        testChat("findWeakestNeighborOwnedByStrongestEnemy", "Enemy neighbors of " + getCountryName(country) + ":");
+//        chatCountryNames("findWeakestNeighborOwnedByStrongestEnemy", enemyNeighbors);
+        
+        // remove all but the weakest enemy neighbors from the list;
+        // first, loop through the list once to find the least number of armies on any of the countries;
+        // then loop again to remove any countries that have more armies than that
+        int leastArmies = Integer.MAX_VALUE; // initially set <leastArmies> to the highest possible value
+        for (int neighbor : enemyNeighbors) { // loop over neighbors
+            int armies = countries[neighbor].getArmies(); // the number of armies on this country
+            if (armies < leastArmies) { // if there are fewer armies on this country than <leastArmies>
+                leastArmies = armies; // set <leastArmies> to this country's number of armies
+            }
+        }
+        ListIterator<Integer> iter = enemyNeighbors.listIterator(enemyNeighbors.size());
+        while (iter.hasPrevious()) { // iterating backwards over the list should be faster when removing elements
+            int neighbor = iter.previous(); // this country
+            int armies = countries[neighbor].getArmies(); // this country's number of armies
+            if (armies > leastArmies) { // if this country has more armies than the weakest neighbor
+                iter.remove(); // remove it
+            }
+        }
+        
+//        testChat("findWeakestNeighborOwnedByStrongestEnemy", "Weakest enemy neighbors of " + getCountryName(country) + ":");
+//        chatCountryNames("findWeakestNeighborOwnedByStrongestEnemy", enemyNeighbors);
+        
+        // now we should have a list of all of only the weakest enemy neighbors;
+        // so we just need to find a country owned by the strongest player
+        int chosenCountry = -1;
+        int highestIncome = Integer.MIN_VALUE; // we don't want to use 0 here, because it might be (???) technically possible for everyone to have a negative income if there are negative continent bonuses; although the game probably keeps the minimum at 3, I'm not sure
+        for (int neighbor : enemyNeighbors) { // loop through the list of weakest neighbors
+            int income = board.getPlayerIncome(countries[neighbor].getOwner()); // the income of the player that owns this country
+            if (income > highestIncome) { // if it's higher than the highest one we've seen so far
+                chosenCountry = neighbor; // choose this country
+                highestIncome = income; // this is the new highest income we've seen
+            }
+        }
+        
+//        testChat("findWeakestNeighborOwnedByStrongestEnemy","Weakest neighbor owned by strongest enemy: " + getCountryName(chosenCountry));
+        
+        // return the chosen country
+        // if the list of enemy neighbors was empty, this value will be -1
+        return chosenCountry;
+    }
+    
+    // return array of countries (projected to be) owned by <player>
+    protected int[] getPlayerCountries(int player) {
+        ArrayList<Integer> ownedCountries = new ArrayList<Integer>();
+        for (int i=0; i<countries.length; i++) {
+            if (getProjectedCountryOwner(i) == player) {
+                ownedCountries.add(i);
+            }
+        }
+        return convertListToIntArray(ownedCountries);
+    }
+    // overloaded version: if no player is supplied, assume it should be us
+    protected int[] getPlayerCountries() {
+        return getPlayerCountries(ID);
+    }
     
     // helper function to return an array of the countries a player owns in a given list of countries (area)
     // player is the player ID to check; area is the list of countries to search in
@@ -1633,7 +1737,6 @@ public class Viking implements LuxAgent
     protected int[] getPlayerCountriesInArea(int[] area) {
         return getPlayerCountriesInArea(area, ID);
     }
-
 
     // helper function to return an array of the countries in a given continent
     protected int[] getCountriesInContinent(int cont) {
@@ -1843,7 +1946,7 @@ public class Viking implements LuxAgent
     // because in that second case, that means we're planning on taking it over this turn
     protected int getProjectedCountryOwner(int country) {
         int currentOwner = countries[country].getOwner();
-        if (currentOwner == ID || isInBattlePlan(country)) {
+        if (isInBattlePlan(country)) {
             return ID;
         }
         return currentOwner;
