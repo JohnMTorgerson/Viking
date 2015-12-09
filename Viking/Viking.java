@@ -385,10 +385,36 @@ public class Viking implements LuxAgent
         testChat("calculateLandgrabObjective", "----- Calculate Landgrab Objective -----");
         
         // recursively find weakest (preferring those owned by strongest opponent) enemy neighbors from each country we own to make several paths
+        ArrayList<ArrayList <Integer>> candidatePaths = new ArrayList<ArrayList <Integer>>();
         for (int ourCountry : ourCountries) {
-            testChat("calculateLandgrabObjective", "--- Picking neighbor of " + getCountryName(ourCountry) + ":");
-            int neighbor = findWeakestNeighborOwnedByStrongestEnemy(ourCountry);
+//            testChat("calculateLandgrabObjective", "--- Picking neighbor of " + getCountryName(ourCountry) + ":");
             
+            ArrayList<Integer> path = new ArrayList<Integer>(); // will contain the current path
+            path.add(ourCountry); // initially add the start country to the path
+            float armiesLeft = (float) armies;
+            while (armiesLeft >= 1) { // keep finding countries for the path as long as we have at least 1 army
+                int nextCountry = findWeakestNeighborOwnedByStrongestEnemy(path.get(path.size()-1), path); // find the next country in the path
+                if (nextCountry != -1) { // if the function returned an actual enemy neighbor
+                    path.add(nextCountry); // add it to the path
+                    armiesLeft -= (float) countries[nextCountry].getArmies() * 1.1f + 1f; // subtract the cost of that neighbor from <armiesLeft>
+                } else { // otherwise there were no enemy neighbors,
+                    break; //  so we're done with this path, even if we have armies left
+                }
+            }
+            candidatePaths.add(path); // add this path to the list of candidates
+        }
+        
+        // remove all single-country paths
+        ListIterator<ArrayList <Integer>> iter = candidatePaths.listIterator(candidatePaths.size());
+        while (iter.hasPrevious()) {
+            if (iter.previous().size() <= 1) {
+                iter.remove();
+            }
+        }
+        
+        testChat("calculateLandgrabObjective", "Candidate paths:");
+        for (ArrayList<Integer> path : candidatePaths) {
+            chatCountryNames("calculateLandgrabObjective", path);
         }
         
         // pick the best of those by our gain and enemy losses weighting
@@ -1639,15 +1665,16 @@ public class Viking implements LuxAgent
 
     // returns the country code of the weakest enemy country that this country can attack,
     // preferring the one owned by the strongest enemy in the event of a tie;
+    // if a neighbor is in <blacklist>, it's ineligible; this function is used for pathfinding, so the blacklist functions as a history of countries already chosen
     // if there are no enemy neighbors, returns -1
-    protected int findWeakestNeighborOwnedByStrongestEnemy(int country) {
+    protected int findWeakestNeighborOwnedByStrongestEnemy(int country, ArrayList<Integer> blacklist) {
         int[] neighbors = countries[country].getAdjoiningCodeList(); // get array of neighbors
         ArrayList<Integer> enemyNeighbors = new ArrayList<Integer>();
         
         // loop through all the neighbors, adding all enemy neighbors to the <enemyNeighbors> list
         for (int neighbor : neighbors) { // loop through all neighbors
-            // if <country> can attack into <neighbor> and we don't own (or plan to own) <neighbor>
-            if (countries[country].canGoto(neighbor) && getProjectedCountryOwner(neighbor) != ID) {
+            // if <country> can attack into <neighbor> and we don't own (or plan to own) <neighbor> and it isn't in the blacklist
+            if (countries[country].canGoto(neighbor) && getProjectedCountryOwner(neighbor) != ID && !isInArray(neighbor, blacklist)) {
                 enemyNeighbors.add(neighbor); // then add it to the list of enemy neighbors
             }
         }
@@ -1694,6 +1721,11 @@ public class Viking implements LuxAgent
         // return the chosen country
         // if the list of enemy neighbors was empty, this value will be -1
         return chosenCountry;
+    }
+    // overloaded version to allow the function to be called without a blacklist;
+    // just passes a dummy arraylist as the blacklist parameter
+    protected int findWeakestNeighborOwnedByStrongestEnemy(int country) {
+        return findWeakestNeighborOwnedByStrongestEnemy(country, new ArrayList<Integer>());
     }
     
     // return array of countries (projected to be) owned by <player>
