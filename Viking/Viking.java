@@ -401,14 +401,10 @@ public class Viking implements LuxAgent
                     break; //  so we're done with this path, even if we have armies left
                 }
             }
-            candidatePaths.add(path); // add this path to the list of candidates
-        }
-        
-        // remove all single-country paths
-        ListIterator<ArrayList <Integer>> iter = candidatePaths.listIterator(candidatePaths.size());
-        while (iter.hasPrevious()) {
-            if (iter.previous().size() <= 1) {
-                iter.remove();
+            // if the path is longer than 1, add the path to the list of candidates
+            // if it's only 1 element long, the starting country didn't have any enemy neighbors at all, so we want to ignore it
+            if (candidatePaths.size() > 1) {
+                candidatePaths.add(path);
             }
         }
         
