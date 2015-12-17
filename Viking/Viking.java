@@ -148,9 +148,9 @@ public class Viking implements LuxAgent
         // and placing armies on the appropriate routes
         while (numberOfArmies > 0 && objectiveList.size() > 0) {
             
-            testChat("placeArmies", "-- BATTLE PLAN: --");
-            chatCountryNames("placeArmies", battlePlan);
-            testChat("placeArmies", "-- --");
+//            testChat("placeArmies", "-- BATTLE PLAN: --");
+//            chatCountryNames("placeArmies", battlePlan);
+//            testChat("placeArmies", "-- --");
             
             // first we will calculate a langrab objective and add it to the list of objectives in the appropriate place according to its score;
             // landgrab objectives work a little differently than the others; we only need one landgrab objective at a time;
@@ -494,21 +494,65 @@ public class Viking implements LuxAgent
         
         testChat("calculateLandgrabObjective", "Candidate paths:");
         
+        //
         // pick the best path
         // we loop through all the paths and calculate their score (our gain + enemy losses divided by actual cost)
         // and pick the path with the highest score
+        //
         ArrayList<Integer> pickedPath = new ArrayList<Integer>(); // will contain the path we pick
         float highestScore = 0.0f; // the highest value (gain + enemy losses over cost) we've seen so far, as we loop through and check each path
         int pickedPathCost = 0; // the cost of the path we'll pick
+        // we want to prefer paths which run through less populated areas;
+        // we'll do a rough approximation of that by calculating the enemy army density in each continent
+        // and when we're choosing between candidate paths, we'll prefer paths in countries with fewer enemy armies per country;
+        // so first we'll calculate the free army density of each continent (how many enemy armies above 1 there are per country)
+        float[]continentDensity = new float[numConts]; // this array will hold the densities of all the continents on the board
+        testChat("calculateLandgrabObjective", "===Continent Army Densities===");
+        for (int cont=0; cont<numConts; cont++) { // loop through all the continents
+            int[] enemyCountries = getEnemyCountriesInContinent(ID, cont); // all the enemy countries in this continent
+            int freeArmies = 0;
+            for (int enemyCountry : enemyCountries) { // loop through the enemy countries
+                freeArmies += countries[enemyCountry].getArmies() - 1; // add up all the free armies
+            }
+            int numCountries = BoardHelper.getContinentSize(cont, countries); // the number of countries in this continent
+            float freeArmyDensity = (float) freeArmies / (float) numCountries; // this continent's density is the number of free enemy armies / the total number of countries
+            continentDensity[cont] = freeArmyDensity; // store the density in the array of all continents' densities
+            testChat("calculateLandgrabObjective", board.getContinentName(cont) + ": " + freeArmyDensity);
+        }
+        // next, we'll adjust that density by adding the average density of all its neighboring continents divided by 2
+        float[] adjustedContDensity = new float[numConts]; // this array will hold the adjusted densities for all the continents
+        float highestAdjustedDensity = 0.0f; // will contain the highest adjusted density of all continents
+        for (int cont=0; cont<numConts; cont++) { // loop through the continents again
+            int[] neighbors = getNeighboringContinents(cont); // an array of continents that have countries that can attack the continent
+            float adjustedDensity = continentDensity[cont]; // start by assigning the continent's density to <adjustedDensity>
+            for (int neighbor : neighbors) {
+                adjustedDensity += continentDensity[neighbor] / (neighbors.length * 2); // then add the average densities of all the neighbor continents divided by 2
+            }
+            adjustedContDensity[cont] = adjustedDensity; // put this continent's adjusted density into the array
+            if (adjustedDensity > highestAdjustedDensity) { // if this is the highest adjusted density we've seen so far
+                highestAdjustedDensity = adjustedDensity; // save it in <highestAdjustedDensity>
+            }
+            testChat("calculateLandgrabObjective", "Neighbors of " + board.getContinentName(cont) + ": " + Arrays.toString(getContinentNames(neighbors)));
+            testChat("calculateLandgrabObjective", "Adjusted density of " + board.getContinentName(cont) + ": " + adjustedDensity);
+        }
+        testChat("calculateLandgrabObjective", "highest adjusted density: " + highestAdjustedDensity);
+        // now we'll calculate a score for each path, and pick the one with the best score
+        // the score accounts for:
+        //   (1) the number of countries we gain by taking it over
+        //   (2) the number of countries our enemies will lose, adjusted so that we prefer to take countries from stronger enemies
+        //   (3) the cost of taking over the path
+        //   (4) the number of free enemy armies in nearby continents
         for (ArrayList<Integer> path : candidatePaths) { // loop through all candidate paths
             // first, calculate our gain and the enemy losses from taking over the path
             int length = path.size(); // the length of the path
-            float gain = (length - 1) / 6.0f; // the value of the countries we gain is the number of countries we'll take over (so not including the first one, which we already own), divided by 3, and then divided by 2 again as an arbitrary hedge because we're not defending these countries
+            float gain = 0.0f; // the value of the countries we gain
             float enemyLoss = 0.0f; // the loss to our enemies when we take over the countries in this path
             for (int i=1; i<length; i++) { // loop through all the countries in this path except the first one (which we own)
+                gain += (1.0f - adjustedContDensity[countries[i].getContinent()] / highestAdjustedDensity) / 2; // this is the calculated value of each country designed to favor continents with fewer enemy armies around (value should be between 0.0 and 0.5)
                 enemyLoss += board.getPlayerIncome(countries[path.get(i)].getOwner()); // add the income of the owner of each country
             }
-            enemyLoss /= 3 * getTotalEnemyIncome() + 0.00001f; // divide the total by 3, because every 3 countries is worth 1 income point, and divide by total enemy income and add a tiny fudge just in case <totalEnemyIncome> is 0
+            gain /= 3.0f; // divide the total gain by 3, because every 3 countries is worth 1 income point
+            enemyLoss /= 3 * getTotalEnemyIncome() + 0.00001f; // divide the total by 3, because every 3 countries is worth 1 income point, and divide by total enemy income (and add a tiny fudge just in case <totalEnemyIncome> is 0)
             
             // then calculate the actual cost of taking over the path
             int cost = getPathCost(convertListToIntArray(path));
@@ -1930,7 +1974,7 @@ public class Viking implements LuxAgent
     }
     
     // helper function to return an array of the countries a player does not own in a given continent
-    protected int[] getEnemyCountriesInContinent(int owner, int cont, Country[] countries) {
+    protected int[] getEnemyCountriesInContinent(int owner, int cont) {
         // get all the countries in the continent
         int[] theCountries = getCountriesInContinent(cont);
         // return getEnemyCountriesInArea on the list of countries
@@ -2071,6 +2115,19 @@ public class Viking implements LuxAgent
         // eventually this function will pick borders of the continent that may include countries outside of the continent itself such that the number of borders to defend is smaller.
         // For now, it will just call the regular BoardHelper function to get the actual borders
         return BoardHelper.getContinentBorders(cont, countries);
+    }
+    
+    // given a continent, get an array of continents that neighbor it and can attack it
+    protected int[] getNeighboringContinents(int cont) {
+        ArrayList<Integer> neighborConts = new ArrayList<Integer>();
+        int[] neighbors = BoardHelper.getDefensibleBordersBeyond(cont, countries);
+        for (int neighbor : neighbors) {
+            int contCode = countries[neighbor].getContinent();
+            if (!isInArray(contCode, neighborConts) && contCode != cont) {
+                neighborConts.add(contCode);
+            }
+        }
+        return convertListToIntArray(neighborConts);
     }
     
     // chat out all continent codes and names
