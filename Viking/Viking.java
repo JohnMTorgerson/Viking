@@ -455,7 +455,7 @@ public class Viking implements LuxAgent
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
     
-    // the idea of a Landgrab objective is just to take over a bunch of countries
+    // the idea of a Landgrab objective is just to take over a bunch of countries,
     // not to take over a continent, just to increase the number of our countries
     // and decrease that of our enemies; this function takes a number of armies
     // and finds a path from one of our countries that would take over as many

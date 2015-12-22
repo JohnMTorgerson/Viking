@@ -10,11 +10,7 @@ Issues which will need to be addressed in the future.
 
  - findBestSingleTakeoverPath() should pick the path with the most armies on the starting country if all else is equal
 
- - create a land-grab objective
-
  - smart borders for takeover objective areas
-
- - somehow make use of unused extra armies on the board? custom function to be called by attackPhase() after the execution of <battlePlan> to check for any unused armies and see what use it can put them to (knockouts or takeovers or land grabbing)
 
  - fortifying
 
