@@ -90,6 +90,7 @@ public class Viking implements LuxAgent
 //            "getAreaBonuses",
 //            "calculateLandgrabObjective",
 //            "findWeakestNeighborOwnedByStrongestEnemy",
+            "getSmartBordersArea",
             ""
         };
         
@@ -183,7 +184,7 @@ public class Viking implements LuxAgent
             
             testChat("placeArmies", "~~~~~~~~~~~ LOOP ~~~~~~~~~~~ (Armies Left: " + numberOfArmies + ")");
             
-            testChat("placeArmies", "--- Possible Objectives (size: " + objectiveList.size() + "): ---");
+            testChat("placeArmies", "--- " + objectiveList.size() + " Possible Objectives: ---");
             for (HashMap objective : objectiveList) {
                 String message = "";
                 message += (String) objective.get("type");
@@ -621,9 +622,9 @@ public class Viking implements LuxAgent
         // loop through all the continents to create an "objective" hashmap for each one and add it to objectiveList
         for(int continent = 0; continent < numConts; continent++) {
             // get countries in this continent
-            // in the future this may include some extra countries outside the continent in order to
-            // reduce the number of borders necessary to defend, but for now the area will just be the continent proper
-            int[] area = getCountriesInContinent(continent);
+            // plus possibly some extra countries outside the continent in order to
+            // reduce the number of borders necessary to defend
+            int[] area = getSmartBordersArea(getCountriesInContinent(continent));
             
             // create takeover objective of this continent
             HashMap<String, Object> objective = calculateTakeoverObjective(area);
@@ -1564,7 +1565,7 @@ public class Viking implements LuxAgent
     // checks to see if country is a border of area by seeing if any of its
     // neighbors is outside of area
     protected boolean isAreaBorder (int country, int[] area) {
-        int[] neighbors = countries[country].getAdjoiningCodeList(); // get neighbors
+        int[] neighbors = BoardHelper.getAttackList(countries[country],countries); // countries[country].getAdjoiningCodeList(); // get neighbors
         boolean inArea = false;
         
         for (int i=0; i<neighbors.length; i++) { // loop through all the country's neighbors
@@ -1580,6 +1581,10 @@ public class Viking implements LuxAgent
             }
         }
         return false; // if we got here, all of the neighbors were in area, so country is not a border; return false
+    }
+    // overloaded version to handle arraylists
+    protected boolean isAreaBorder(int country, ArrayList<Integer> list) {
+        return isAreaBorder(country, convertListToIntArray(list));
     }
     
     // returns an int[] of all the borders of the given area
@@ -1598,6 +1603,10 @@ public class Viking implements LuxAgent
         }
         
         return bordersArray;
+    }
+    // overloaded version to handle arraylists
+    protected int[] getAreaBorders(ArrayList<Integer> list) {
+        return getAreaBorders(convertListToIntArray(list));
     }
     
     // find all possible paths through enemy countries within countryList
@@ -1712,6 +1721,10 @@ public class Viking implements LuxAgent
             names[i] = countries[codes[i]].getName().replace(",",""); // get rid of commas in country names because that's confusing when we output the whole array as a string
         }
         return names;
+    }
+    // overloaded version to handle arraylists instead of arrays
+    protected String[] getCountryNames(ArrayList<Integer> list) {
+        return getCountryNames(convertListToIntArray(list));
     }
     
     // return the name of a country code
@@ -2110,11 +2123,75 @@ public class Viking implements LuxAgent
         return results;
     }
 
-    // custom get continent borders function
-    protected int[] getSmartContinentBorders(int cont, Country[] countries) {
-        // eventually this function will pick borders of the continent that may include countries outside of the continent itself such that the number of borders to defend is smaller.
-        // For now, it will just call the regular BoardHelper function to get the actual borders
-        return BoardHelper.getContinentBorders(cont, countries);
+    // custom get area borders function
+    // when passed an area, will see if it can reduce the number of borders
+    // that have to be defended by adding countries to the area (but not reducing any)
+    protected int[] getSmartBordersArea(int[] originalArea) {
+        int[] originalBorders = getAreaBorders(originalArea); // get borders of original area
+        int oldNumBorders = originalBorders.length;
+        
+        // first we make a list of all the countries one layer out from each border country
+        ArrayList<Integer> newLayer = new ArrayList<Integer>(); // new borders one layer out from original borders
+        for (int country : originalBorders) { // loop through original borders
+            int[] neighbors = BoardHelper.getAttackList(countries[country], countries); // get neighbors of this border country
+            for (int neighbor : neighbors) { // loop through each neighbor
+                if (!isInArray(neighbor,originalArea) && !isInArray(neighbor, newLayer)) { // if this neighbor is not in the original area and we haven't seen it before
+                    newLayer.add(neighbor); // add it to <newLayer>
+                }
+            }
+        }
+        // testChat("getSmartBordersArea", "New initial layer for " + board.getContinentName(getAreaContinentIDs(originalArea)[0]) + ": " + Arrays.toString(getCountryNames(newLayer)));
+        
+        // next we'll make a new area consisting of the original area plus the <newLayer> countries
+        ArrayList<Integer> newArea = new ArrayList<Integer>();
+        for (int i=0; i<originalArea.length; i++) {
+            newArea.add(originalArea[i]); // populate <newArea> with the countries from <originalArea>
+        }
+        newArea.addAll(newLayer); // and those from <newLayer>
+        
+        // then we will loop through the <newLayer> countries and prune off any that are only touching
+        // one or fewer non-border countries in the new area;
+        // we keep looping around the whole list as long as we keep removing countries
+        boolean removed = true;
+        int newNumBorders = -1;
+        while (removed) { // keep looping as long as we removed a country last time
+            removed = false; // set <removed> flag to false
+            
+            // get the borders of the new area
+            int[] newBorders = getAreaBorders(newArea);
+            newNumBorders = newBorders.length;
+            
+            // // loop through each country in <newLayer>
+            Iterator<Integer> newLayerIter = newLayer.iterator();
+            while (newLayerIter.hasNext()) {
+                int newCountry = newLayerIter.next(); // the country we're currently on in the loop
+    //            testChat("getSmartBordersArea", "New borders for " + board.getContinentName(getAreaContinentIDs(originalArea)[0]) + ": " + Arrays.toString(getCountryNames(newBorders)));
+
+                // now test the country we're on;
+                // if the country itself is a border and if it touches 0 or 1 countries in the new area
+                // that aren't themselves borders, then we can remove it without increasing the total number of borders
+                if (isAreaBorder(newCountry, newArea)) { // if the country is itself a border
+                    int[] neighbors = countries[newCountry].getAdjoiningCodeList(); // get neighbors
+                    int numInteriorNeighbors = 0; // the number of interior neighbors <country> touches (can attack)
+                    for (int neighbor : neighbors) { // loop through neighbors
+                        if (countries[newCountry].canGoto(neighbor) && !isAreaBorder(neighbor, newArea)) { // if <country> can attack <neighbor> and <neighbor> is not a border
+                            numInteriorNeighbors += 1;
+                        }
+                    }
+                    if (numInteriorNeighbors <= 1) { // if the country is touching no more than 1 interior country
+                        // then we don't want to use it as a smart border, so
+                        newLayerIter.remove(); // remove it from <newLayer>
+                        newArea.remove((Integer) newCountry); // and also from <newArea>
+                        removed = true; // set <removed> flag to true so we will loop around the whole list again
+                    }
+                }
+            }
+        }
+    
+        testChat("getSmartBordersArea", "Countries we're considering adding to " + board.getContinentName(getAreaContinentIDs(originalArea)[0]) + ": " + (newLayer.size() > 0 ? Arrays.toString(getCountryNames(newLayer)) : "[none]") + " - now " + newNumBorders + " borders, " + oldNumBorders + " original borders");
+        
+        
+        return originalArea;
     }
     
     // given a continent, get an array of continents that neighbor it and can attack it
