@@ -2123,12 +2123,12 @@ public class Viking implements LuxAgent
         return results;
     }
 
-    // custom get area borders function
     // when passed an area, will see if it can reduce the number of borders
-    // that have to be defended by adding countries to the area (but not reducing any)
+    // that have to be defended by adding countries to the area (but not removing any)
+    // returns a new area with the added countries included
     protected int[] getSmartBordersArea(int[] originalArea) {
         int[] originalBorders = getAreaBorders(originalArea); // get borders of original area
-        int oldNumBorders = originalBorders.length;
+        int oldNumBorders = originalBorders.length; // the number of borders that the original area has
         
         // first we make a list of all the countries one layer out from each border country
         ArrayList<Integer> newLayer = new ArrayList<Integer>(); // new borders one layer out from original borders
@@ -2161,7 +2161,7 @@ public class Viking implements LuxAgent
             int[] newBorders = getAreaBorders(newArea);
             newNumBorders = newBorders.length;
             
-            // // loop through each country in <newLayer>
+            // loop through each country in <newLayer>
             Iterator<Integer> newLayerIter = newLayer.iterator();
             while (newLayerIter.hasNext()) {
                 int newCountry = newLayerIter.next(); // the country we're currently on in the loop
@@ -2190,8 +2190,12 @@ public class Viking implements LuxAgent
     
         testChat("getSmartBordersArea", "Countries we're considering adding to " + board.getContinentName(getAreaContinentIDs(originalArea)[0]) + ": " + (newLayer.size() > 0 ? Arrays.toString(getCountryNames(newLayer)) : "[none]") + " - now " + newNumBorders + " borders, " + oldNumBorders + " original borders");
         
-        
-        return originalArea;
+        // if the new area has fewer borders than the original area
+        if (newNumBorders < oldNumBorders) {
+            return convertListToIntArray(newArea); // return the new area
+        } else {
+            return originalArea; // otherwise, return the original area
+        }
     }
     
     // given a continent, get an array of continents that neighbor it and can attack it
