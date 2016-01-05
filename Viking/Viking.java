@@ -2194,16 +2194,32 @@ public class Viking implements LuxAgent
         // now pick the candidate area with the fewest borders (favoring the lower-layer areas in the case of ties)
         ArrayList<Integer> pickedArea = new ArrayList<Integer>();
         int minBorders = Integer.MAX_VALUE;
+        int numOriginalBorders = getAreaBorders(originalArea).length; // number of borders of original area
+        int numOriginalCountries = originalArea.length;
         int pickedLayer = -1; // (just for testing purposes)
+        String message = "ratios -- "; // just for testing purposes
         for(int i=0; i<candidateAreas.size(); i++) { // loop through all the candidate areas
             int numBorders = getAreaBorders(candidateAreas.get(i)).length; // the number of borders this area has
             if (numBorders < minBorders) { // if this area has the least borders so far
-                minBorders = numBorders; // set <minBorders> to this areas number of borders
-                pickedArea = candidateAreas.get(i); // pick it
-                pickedLayer = i; // (just for testing purposes)
+                int numCountries = candidateAreas.get(i).size(); // the number of countries in the proposed new area
+                // now we'll check if it's worth adding the number of countries proposed to get the resulting reduction in borders;
+                // if the following ratio is less than 1.1, we subjectively deem that it's worth it
+                // i.e. if the border reduction is small and the number of countries we have to add is large, it's not worth doing
+                // the ratio of the original area is always 1.0, so if all of the proposed new areas fail here, we'll revert to the original
+                // (so don't ever change this ratio to less than 1.0, or it will break)
+                float ratio = ((float) numBorders / (float) numOriginalBorders) / ((float) numOriginalCountries / (float) numCountries);
+                
+                message += i + " layer: " + ratio + ", "; // testing purposes
+                
+                if (ratio < 1.1f) {
+                    minBorders = numBorders; // set <minBorders> to this areas number of borders
+                    pickedArea = candidateAreas.get(i); // pick it
+                    pickedLayer = i; // (just for testing purposes)
+                }
             }
         }
         
+        testChat("getSmartBordersArea", message);
         testChat("getSmartBordersArea", ">>>>>>>> Picking layer " + pickedLayer + " version");
         testChat("getSmartBordersArea","");
         

@@ -3,19 +3,18 @@ Issues which will need to be addressed in the future.
  === Stopgap Measures ===
  These are shortcuts we have taken to speed up development which result in precarious code, the parents of future bugs.
  
-  - 
+  - We haven’t tested any maps with one-way connections
+
+  - We haven’t tested any maps with negative continent bonuses
   
  === Missing Features === 
  These are things which are unlikely to break anything when absent, but will result in a smarter bot.
-
- - findBestSingleTakeoverPath() should pick the path with the most armies on the starting country if all else is equal
-
- - smart borders for takeover objective areas
 
  - fortifying
 
  - pick countries
 
- - somehow project what enemy bonuses will be after we do the knockouts in a turn when we’re calculating border costs, so that we don’t add borders for enemy threats that will be cut down in the same turn
-
  - add a way for the bot to take over the whole map at once when it has enough armies to do it in a single turn
+
+ - card smarts: create objective to eliminate a player to get their cards;
+                anything else for card smarts?
