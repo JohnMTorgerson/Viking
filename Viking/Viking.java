@@ -90,7 +90,9 @@ public class Viking implements LuxAgent
 //            "getAreaBonuses",
 //            "calculateLandgrabObjective",
 //            "findWeakestNeighborOwnedByStrongestEnemy",
-            "getSmartBordersArea",
+//            "getSmartBordersArea",
+//            "calculateWipeoutObjective",
+//            "findContiguousAreas",
             ""
         };
         
@@ -140,6 +142,11 @@ public class Viking implements LuxAgent
         
         // add landgrab objective
         objectiveList.add(calculateLandgrabObjective(numberOfArmies));
+        
+        // add wipeout objectives
+        ArrayList<HashMap> tempWipeouts = findWipeoutObjectives();
+        chatObjectives("placeArmies",tempWipeouts);
+        //objectiveList.addAll(tempWipeouts);
         
         // sort all the objectives by score
         sortObjectives(objectiveList, "score");
@@ -201,6 +208,9 @@ public class Viking implements LuxAgent
                 if ((String) objective.get("type") == "landgrab") {
                     ArrayList<int[]> temp = (ArrayList<int[]>) objective.get("plan");
                     message += getCountryName(temp.get(0)[0]) + "..." + getCountryName(temp.get(0)[temp.get(0).length - 1]) + ", ";
+                }
+                if ((String) objective.get("type") == "wipeout") {
+                    message += (String) objective.get("playerName") + ", ";
                 }
                 
                 if (objective.get("bonus") != null) {
@@ -275,6 +285,10 @@ public class Viking implements LuxAgent
                 battlePlan.addAll(objectivePlan);
                 
                 chatString = "****** Landgrab from " + getCountryName(objectivePlan.get(0)[0]) + " to " + getCountryName(objectivePlan.get(0)[objectivePlan.get(0).length - 1]) + " - ";
+            }
+            // if the objective is a wipeout
+            else if (type == "wipeout") {
+                objectiveList.remove(0); // temporary placeholder until we actually write the code to choose wipeout objectives
             }
             
             // if we picked an objective this loop
@@ -455,6 +469,96 @@ public class Viking implements LuxAgent
     /*
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
+    
+    // returns a list of wipeout objectives, one for each player remaining in the game that isn't us
+    // a wipeout objective is a list of attack paths to eliminate a player from the game entirely
+    // along with an accompanying score
+    protected ArrayList<HashMap> findWipeoutObjectives() {
+        // the list of objectives we'll return
+        ArrayList<HashMap> objectiveList = new ArrayList<HashMap>();
+
+        int totalPlayers = board.getNumberOfPlayers(); // the number of players that started the game
+        
+        // loop through all the players
+        for (int player=0; player<totalPlayers; player++) {
+            // if the player isn't us and the player is still in the game
+            if (player != ID && BoardHelper.playerIsStillInTheGame(player, countries)) {
+                // then calculate a wipeout objective for this player
+                HashMap<String,Object> objective = calculateWipeoutObjective(player);
+                
+                // if the objective was actually created for this player
+                if (objective != null) {
+                    // add it to the list
+                    objectiveList.add(objective);
+                }
+            }
+        }
+        
+        // return the list
+        return objectiveList;
+    }
+    
+    // calculates a wipeout objective for the given player
+    protected HashMap<String, Object> calculateWipeoutObjective(int player) {
+        // create the HashMap
+        HashMap<String, Object> objective = new HashMap<String, Object>();
+        
+        // only actually create the objective if the player doesn't have more armies than we'll probably be able to take over in a single turn
+//        if (BoardHelper.getPlayerArmies(player, countries) < board.getPlayerIncome(ID)) {
+        
+            // set type
+            objective.put("type", "wipeout");
+        
+            // set player ID
+            objective.put("playerID", player);
+        
+            // set player name
+            objective.put("playerName", board.getPlayerName(player));
+        
+            // find and set area
+            int[] playerCountries = getPlayerCountries(player); // all countries owned by <player>
+            objective.put("area", playerCountries);
+            
+            // estimate and set cost
+            ArrayList<int[]> contiguousAreas = findContiguousAreas(playerCountries); // break up player's countries into contiguous areas to estimate their costs separately
+            testChat("calculateWipeoutObjective","Countries owned by " + board.getPlayerName(player) + ": ");
+            chatCountryNames("calculateWipeoutObjective",contiguousAreas);
+            int cost = 0;
+            Set<Integer> totalCountriesToTake = new HashSet<Integer>(); // will contain every country we mean to take over, including any entry paths we need; we're using a hashset to avoid duplicates
+            for(int[] area : contiguousAreas) { // loop through all the contiguous areas
+                int[] entryPath = getCheapestRouteToArea(area, false); // find the cheapest path to this area; pass 'false' because we don't care about ending up at the weakest border of the area
+                ArrayList<Integer> pathAndAreaList = new ArrayList<Integer>(); // new arraylist to hold the path and the countries in the area;
+                for (int i=1; i<entryPath.length - 1; i++) { // add entryPath to new arraylist, except the first element (which is a country we own, so doesn't count toward cost) and the last element (which is a country in the area, so it's already in enemyCountries)
+                    pathAndAreaList.add(entryPath[i]);
+                }
+                for (int country : area) { // add the countries in the area into the new arraylist
+                    pathAndAreaList.add(country);
+                }
+                totalCountriesToTake.addAll(pathAndAreaList);
+                int[] pathAndArea = convertListToIntArray(pathAndAreaList); // convert the arraylist into an array for use in getGlobCost(); pathAndArea now holds all the countries in the area we're taking over, plus any enemy countries we have to take over to get there
+                cost += getGlobCost(pathAndArea); // estimate the cost of the area and the path together and add them to <cost>
+            }
+            objective.put("cost", cost);
+
+            // calculate and set score
+            //
+            // for the score, we
+            float cardsValue = ((float) board.getPlayerCards(player) / 3.0f) * (float) board.getNextCardSetValue();  //(each card is treated as 1/3 the value of the next card set)
+            float gain = (float) totalCountriesToTake.size() / 6.0f + cardsValue; // <gain> is the expected increase in our income: mainly the value of the cards we'll get, but also the number of countries we'll take over divided by 3, and then by 2 (an arbitrary reduction to account for the probability that we won't keep these countries)
+            float enemyLoss = 0.0f; // <enemyLoss> is how much we reduce the bonus of any enemies we travel through, weighted by their relative income
+            for (int country : totalCountriesToTake) { // loop through each enemy country in the (path and) area
+                enemyLoss += board.getPlayerIncome(countries[country].getOwner()); // add the income of the owner of each country
+            }
+            enemyLoss /= 3 * getTotalEnemyIncome() + 0.00001f; // divide the total by 3, because every 3 countries is worth 1 income point, and divide by total enemy income and add a tiny fudge just in case <totalEnemyIncome> is 0
+            enemyLoss += cardsValue;
+            float score = 10f * ((float) gain + enemyLoss) / ((float) cost + 0.00001f); // the score is our gain + the enemies' loss divided by cost and the square root of the number of turns it will take (to discourage large projects)
+            objective.put("score", score);
+        
+            return objective;
+//        } else {
+//            return null;
+//        }
+    }
     
     // the idea of a Landgrab objective is just to take over a bunch of countries,
     // not to take over a continent, just to increase the number of our countries
@@ -1657,6 +1761,46 @@ public class Viking implements LuxAgent
         // paths below us that were found recursively, which will then be concatenated with any other
         // terminal paths that were found elsewhere (i.e. the branches that split above us) as they bubble up
         return terminalPaths;
+    }
+    
+    //given an area, find all contiguous areas within it
+    //e.g.
+    protected ArrayList findContiguousAreas(int[] countryArray) {
+        ArrayList<int[]> contiguousAreaList = new ArrayList<int[]>();
+        ArrayList<Integer> countryList = new ArrayList<Integer>();
+        for (int country : countryArray) { countryList.add(country); }
+        
+        // loop through the master <countryList>
+        while (countryList.size() > 0) {
+            
+            ArrayList<Integer> thisClump = new ArrayList<Integer>(); // will be populated with this clump of contiguous countries
+            thisClump.add(countryList.get(0)); // add the country we're on to the clump
+            countryList.remove(0); // then remove it from the master list
+            
+            // now we'll find all the neighbors of the initial country,
+            // and if any of them are in <countryList>, we'll add them to the end of the <thisClump> list
+            // and remove them from <countryList>;
+            // since we added them to <thisClump>, we'll then run into them on subsequent iterations
+            // of the for loop and check their neighbors as well in the same fashion;
+            // this loop will end when no more countries in it have neighbors that are in <countryList>
+            // at which point we know we'll have an exhaustive "clump" of contiguous countries,
+            // and then we'll put it into our results list <contiguousAreaList>
+            // and move on to the next country in the master list
+            for(int country=0; country<thisClump.size(); country++) { // loop through the countries in this clump
+                int[] neighbors = countries[thisClump.get(country)].getAdjoiningCodeList(); // get neighbors of this country
+                for (int neighbor : neighbors) { // loop through neighbors
+                    if (isInArray(neighbor,countryList)) { // if neighbor is in countryList, we haven't seen it yet,
+                        thisClump.add(neighbor); // so add neighbor to thisClump
+                        countryList.remove((Integer) neighbor); // and remove it from countryList
+                    }
+                }
+            }
+            
+            // add <thisClump> to the results list
+            contiguousAreaList.add(convertListToIntArray(thisClump));
+        }
+        
+        return contiguousAreaList;
     }
     
     // called by the findAreaPaths function to determine whether a potential country in a path is valid
