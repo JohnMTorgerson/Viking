@@ -134,8 +134,11 @@ public class Viking implements LuxAgent
         // clear the global <borderArmies> HashMap, which stores the border garrison strength for each border country of each area we want to take over
         borderArmies.clear();
         
-        // find list of objectives to knockout enemy bonuses
-        ArrayList<HashMap> objectiveList = findKnockoutObjectives();
+        // this array list will hold all of the possible objectives we can pursue this turn
+        ArrayList<HashMap> objectiveList = new ArrayList<HashMap>();
+        
+        // find and list of objectives to knockout enemy bonuses
+        objectiveList.addAll(findKnockoutObjectives());
         
         // find and add list of continent takeover objectives
         objectiveList.addAll(findTakeoverObjectives());
@@ -146,7 +149,7 @@ public class Viking implements LuxAgent
         // add wipeout objectives
         ArrayList<HashMap> tempWipeouts = findWipeoutObjectives();
         chatObjectives("placeArmies",tempWipeouts);
-        //objectiveList.addAll(tempWipeouts);
+        objectiveList.addAll(tempWipeouts);
         
         // sort all the objectives by score
         sortObjectives(objectiveList, "score");
@@ -194,33 +197,38 @@ public class Viking implements LuxAgent
             testChat("placeArmies", "--- " + objectiveList.size() + " Possible Objectives: ---");
             for (HashMap objective : objectiveList) {
                 String message = "";
-                message += (String) objective.get("type");
-                message += " - score: ";
-                String scoreStr = "" + (Float) objective.get("score");
-                message += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
-                message += " - ";
-                if (objective.get("continentID") != null) {
-                    message += board.getContinentName((Integer) objective.get("continentID")) + ", ";
-                }
-                if (objective.get("continentIDs") != null) {
-                    message += Arrays.toString(getContinentNames((int[]) objective.get("continentIDs"))) + ", ";
-                }
-                if ((String) objective.get("type") == "landgrab") {
-                    ArrayList<int[]> temp = (ArrayList<int[]>) objective.get("plan");
-                    message += getCountryName(temp.get(0)[0]) + "..." + getCountryName(temp.get(0)[temp.get(0).length - 1]) + ", ";
-                }
-                if ((String) objective.get("type") == "wipeout") {
-                    message += (String) objective.get("playerName") + ", ";
-                }
                 
-                if (objective.get("bonus") != null) {
-                    message += "bonus: " + (Integer) objective.get("bonus") + ", ";
-                }
-                message += "cost: ";
-                message += (Integer) objective.get("cost");
-                if (objective.get("oldScore") != null) {
-                    message += " - (old score: ";
-                    message += (Float) objective.get("oldScore") + ")";
+                if (objective != null) {
+                    message += (String) objective.get("type");
+                    message += " - score: ";
+                    String scoreStr = "" + (Float) objective.get("score");
+                    message += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
+                    message += " - ";
+                    if (objective.get("continentID") != null) {
+                        message += board.getContinentName((Integer) objective.get("continentID")) + ", ";
+                    }
+                    if (objective.get("continentIDs") != null) {
+                        message += Arrays.toString(getContinentNames((int[]) objective.get("continentIDs"))) + ", ";
+                    }
+                    if ((String) objective.get("type") == "landgrab") {
+                        ArrayList<int[]> temp = (ArrayList<int[]>) objective.get("plan");
+                        message += getCountryName(temp.get(0)[0]) + "..." + getCountryName(temp.get(0)[temp.get(0).length - 1]) + ", ";
+                    }
+                    if ((String) objective.get("type") == "wipeout") {
+                        message += (String) objective.get("playerName") + ", ";
+                    }
+                    
+                    if (objective.get("bonus") != null) {
+                        message += "bonus: " + (Integer) objective.get("bonus") + ", ";
+                    }
+                    message += "cost: ";
+                    message += (Integer) objective.get("cost");
+                    if (objective.get("oldScore") != null) {
+                        message += " - (old score: ";
+                        message += (Float) objective.get("oldScore") + ")";
+                    }
+                } else {
+                    message += "ERROR: objective is null";
                 }
                 
                 testChat("placeArmies", message);
@@ -238,100 +246,131 @@ public class Viking implements LuxAgent
             // that costs more than we can afford
             HashMap<String, Object> objective = objectiveList.get(0);
             
-            // the type of the objective (whether it's a knockout or takeover)
-            String type = (String) objective.get("type");
-            
-            // if the objective is a knockout
-            if (type == "knockout") {
-                // pick this objective if we can afford it
-                if ((Integer) objective.get("cost") <= numberOfArmies) {
+            if (objective != null) {
+                // store the type of the objective (whether it's a knockout or takeover, etc.)
+                String type = "";
+                if (objective.containsKey("type")) {
+                    type = (String) objective.get("type");
+                }
+                
+                // if the objective is a knockout
+                if (type == "knockout") {
+                    // pick this objective if we can afford it
+                    if ((Integer) objective.get("cost") <= numberOfArmies) {
+                        picked = true; // set <picked> flag to true
+                        chatString = "****** Knockout " + board.getContinentName((Integer) objective.get("continentID")) + " - ";
+                        
+                        // add the knockout path to battlePlan
+                        ArrayList<int[]> objectivePlan = (ArrayList<int[]>) objective.get("plan");
+                        battlePlan.addAll(objectivePlan);
+                    } else {
+                        // if the knockout is too expensive, put it in the back
+                        // we will then run the loop again without reassessing the objectives.
+                        objectiveList.remove(0);
+                        objectiveList.add(objective);
+                    }
+                }
+                // if the objective is a takeover
+                else if (type == "takeover") {
+                    picked = true;
+                    
+                    // we need to pick the right countries to place our armies on in order to take over the area
+                    // the pickBestTakeoverPaths function will simulate taking over the area
+                    // from multiple countries and give us back the best set of paths to do so
+                    int[] takeoverArea = (int[]) objective.get("area");
+                    ArrayList<int[]> takeoverPlan = pickBestTakeoverPaths(takeoverArea); // get the best paths to take over the goalCont
+                    
+                    // add the takeover plan paths to <battlePlan>
+                    battlePlan.addAll(takeoverPlan);
+                    
+                    // calculate and store the desired border garrisons on the area we're taking over
+                    // so that when we place the armies on battlePlan, it will know how many extra to place for the garrisons
+                    setBorderStrength(takeoverArea);
+                    
+                    chatString = "****** Takeover " + Arrays.toString(getContinentNames((int[]) objective.get("continentIDs"))) + " - ";
+                }
+                // if the objective is a landgrab
+                else if (type == "landgrab") {
                     picked = true; // set <picked> flag to true
-                    chatString = "****** Knockout " + board.getContinentName((Integer) objective.get("continentID")) + " - ";
                     
                     // add the knockout path to battlePlan
                     ArrayList<int[]> objectivePlan = (ArrayList<int[]>) objective.get("plan");
                     battlePlan.addAll(objectivePlan);
-                } else {
-                    // if the knockout is too expensive, put it in the back
-                    // we will then run the loop again without reassessing the objectives.
+                    
+                    chatString = "****** Landgrab from " + getCountryName(objectivePlan.get(0)[0]) + " to " + getCountryName(objectivePlan.get(0)[objectivePlan.get(0).length - 1]) + " - ";
+                }
+                // if the objective is a wipeout
+                else if (type == "wipeout") {
+                    picked = true; // set <picked> flag to true
+                    
+                    // find the best paths to takeover all of the player's countries
+                    int[] wipeoutArea = (int[]) objective.get("area");
+                    ArrayList<int[]> wipeoutPlan = pickBestTakeoverPaths(wipeoutArea); // get the best paths to take over all the player's countries
+                    
+                    // add those paths to battlePlan
+                    battlePlan.addAll(wipeoutPlan);
+
+                    chatString = "****** Wipeout " + (String) objective.get("playerName") + " - ";
+                }
+                // if we got here, we don't know what this objective is, so get rid of it
+                else {
                     objectiveList.remove(0);
-                    objectiveList.add(objective);
-                }
-            }
-            // if the objective is a takeover
-            else if (type == "takeover") {
-                picked = true;
-                chatString = "****** Takeover " + Arrays.toString(getContinentNames((int[]) objective.get("continentIDs"))) + " - ";
-                
-                // we need to pick the right countries to place our armies on in order to take over the area
-                // the pickBestTakeoverPaths function will simulate taking over the area
-                // from multiple countries and give us back the best set of paths to do so
-                int[] takeoverArea = (int[]) objective.get("area");
-                ArrayList<int[]> takeoverPlan = pickBestTakeoverPaths(takeoverArea); // get the best paths to take over the goalCont
-                
-                // add the takeover plan paths to <battlePlan>
-                battlePlan.addAll(takeoverPlan);
-                
-                // calculate and store the desired border garrisons on the area we're taking over
-                // so that when we place the armies on battlePlan, it will know how many extra to place for the garrisons
-                setBorderStrength(takeoverArea);
-            }
-            // if the objective is a landgrab
-            else if (type == "landgrab") {
-                picked = true; // set <picked> flag to true
-                
-                // add the knockout path to battlePlan
-                ArrayList<int[]> objectivePlan = (ArrayList<int[]>) objective.get("plan");
-                battlePlan.addAll(objectivePlan);
-                
-                chatString = "****** Landgrab from " + getCountryName(objectivePlan.get(0)[0]) + " to " + getCountryName(objectivePlan.get(0)[objectivePlan.get(0).length - 1]) + " - ";
-            }
-            // if the objective is a wipeout
-            else if (type == "wipeout") {
-                objectiveList.remove(0); // temporary placeholder until we actually write the code to choose wipeout objectives
-            }
-            
-            // if we picked an objective this loop
-            // place armies on its routes, then remove it from the list
-            // and recalculate all the remaining objectives in case the one we picked affects them in any way
-            // and the sort the recalculated list
-            if (picked) {
-                // place the number of armies needed to fulfull the objective on the starting countries of all the paths
-                // store any remaining armies available in numberOfArmies
-                numberOfArmies = placeArmiesOnRoutes(battlePlan,numberOfArmies);
-                
-                testTemp = testTemp - numberOfArmies;
-                testChat("placeArmies", chatString + "placed " + testTemp + " armies");
-                
-                // since we've made plans for this objective, we don't need to look at it again
-                // except in the case of the landgrab objective, which we want to keep and recalculate each loop even if we picked it
-                if (type != "landgrab") {
-                    objectiveList.remove(0);
+                    chatString = "****** ERROR: UNKNOWN OBJECTIVE TYPE - ";
                 }
                 
-                // loop through the list of remaining objectives
-                // and recalculate them all
-                for (int i=0; i<objectiveList.size(); i++) {
-                    HashMap<String, Object> element = objectiveList.get(i);
-                    HashMap<String, Object> newElement = new HashMap<String, Object>(); // instantiate HashMap for recalculated objective, regardless of type
-                    // each type uses its own creation function
-                    if ((String) element.get("type") == "knockout") {
-                        newElement = calculateKnockoutObjective((Integer) element.get("continentID"));  // knockouts are generated based off of continent IDs
-                    } else if ((String) element.get("type") == "takeover") {
-                        newElement = calculateTakeoverObjective((int[]) element.get("area"));  // takeovers are generated based on areas
-                    } else if ((String) element.get("type") == "landgrab") {
-                        newElement = calculateLandgrabObjective(numberOfArmies); // the landgrab is generated by a number of armies it's allowed to use; in this case, we give it all the remaining armies we have
+                // if we picked an objective this loop
+                // place armies on its routes, then remove it from the list
+                // and recalculate all the remaining objectives in case the one we picked affects them in any way
+                // and the sort the recalculated list
+                if (picked) {
+                    // place the number of armies needed to fulfull the objective on the starting countries of all the paths
+                    // store any remaining armies available in numberOfArmies
+                    numberOfArmies = placeArmiesOnRoutes(battlePlan,numberOfArmies);
+                    
+                    testTemp = testTemp - numberOfArmies;
+                    testChat("placeArmies", chatString + "placed " + testTemp + " armies");
+                    
+                    // since we've made plans for this objective, we don't need to look at it again
+                    // except in the case of the landgrab objective, which we want to keep and recalculate each loop even if we picked it
+                    if (type != "landgrab") {
+                        objectiveList.remove(0);
                     }
-                    if (newElement != null) { // if the recalculated objective isn't null
-                        objectiveList.set(i, newElement); // replace the old one with it
-                    } else { // otherwise the element is null (e.g. if the knockout continent is/will be no longer owned by an enemy; i.e. we picked a path through it)
-                        objectiveList.remove(i); // remove it from the list
-                        i--; // decrement i, because all the elements moved to the left (I know, I know)
+                    
+                    // loop through the list of remaining objectives
+                    // and recalculate them all
+                    for (int i=0; i<objectiveList.size(); i++) {
+                        HashMap<String, Object> element = objectiveList.get(i);
+                        HashMap<String, Object> newElement = new HashMap<String, Object>(); // instantiate HashMap for recalculated objective, regardless of type
+                        
+                        // each type uses its own creation function
+                        String elementType = "";
+                        if (element != null && element.containsKey("type")) {
+                            elementType = (String) element.get("type");
+                        }
+                        if (elementType == "knockout") {
+                            newElement = calculateKnockoutObjective((Integer) element.get("continentID"));  // knockouts are generated based off of continent IDs
+                        } else if (elementType == "takeover") {
+                            newElement = calculateTakeoverObjective((int[]) element.get("area"));  // takeovers are generated based on areas
+                        } else if (elementType == "landgrab") {
+                            newElement = calculateLandgrabObjective(numberOfArmies); // the landgrab is generated by a number of armies it's allowed to use; in this case, we give it all the remaining armies we have
+                        } else if (elementType == "wipeout") {
+                            newElement = calculateWipeoutObjective((Integer) element.get("playerID")); // recalculate wipeout objective by passing the player ID
+                        }
+                        if (!newElement.isEmpty() && newElement != null) { // if the recalculated objective isn't empty or null
+                            objectiveList.set(i, newElement); // replace the old one with it
+                        } else { // otherwise the element is null (e.g. if the knockout continent is/will be no longer owned by an enemy; i.e. we picked a path through it)
+                            objectiveList.remove(i); // remove it from the list
+                            i--; // decrement i, because all the elements moved to the left (I know, I know)
+                        }
                     }
+                    
+                    // re-sort the list
+                    sortObjectives(objectiveList, "score");
+                    
+                } else { // this objective doesn't exist
+                    objectiveList.remove(0); // so remove it and move on to the next one
+                    testChat("placeArmies", "****** ERROR: OBJECTIVE IS NULL");
                 }
-                
-                // re-sort the list
-                sortObjectives(objectiveList, "score");
             }
         }
     }
@@ -504,7 +543,7 @@ public class Viking implements LuxAgent
         HashMap<String, Object> objective = new HashMap<String, Object>();
         
         // only actually create the objective if the player doesn't have more armies than we'll probably be able to take over in a single turn
-//        if (BoardHelper.getPlayerArmies(player, countries) < board.getPlayerIncome(ID)) {
+        if (BoardHelper.getPlayerArmies(player, countries) < board.getPlayerIncome(ID)) {
         
             // set type
             objective.put("type", "wipeout");
@@ -523,21 +562,19 @@ public class Viking implements LuxAgent
             ArrayList<int[]> contiguousAreas = findContiguousAreas(playerCountries); // break up player's countries into contiguous areas to estimate their costs separately
             testChat("calculateWipeoutObjective","Countries owned by " + board.getPlayerName(player) + ": ");
             chatCountryNames("calculateWipeoutObjective",contiguousAreas);
-            int cost = 0;
             Set<Integer> totalCountriesToTake = new HashSet<Integer>(); // will contain every country we mean to take over, including any entry paths we need; we're using a hashset to avoid duplicates
             for(int[] area : contiguousAreas) { // loop through all the contiguous areas
                 int[] entryPath = getCheapestRouteToArea(area, false); // find the cheapest path to this area; pass 'false' because we don't care about ending up at the weakest border of the area
-                ArrayList<Integer> pathAndAreaList = new ArrayList<Integer>(); // new arraylist to hold the path and the countries in the area;
-                for (int i=1; i<entryPath.length - 1; i++) { // add entryPath to new arraylist, except the first element (which is a country we own, so doesn't count toward cost) and the last element (which is a country in the area, so it's already in enemyCountries)
-                    pathAndAreaList.add(entryPath[i]);
+                for (int i=1; i<entryPath.length - 1; i++) { // add entryPath to the set, except the first element (which is a country we own, so doesn't count toward cost) and the last element (which is a country in the area, so it will get added separately)
+                    totalCountriesToTake.add(entryPath[i]);
                 }
-                for (int country : area) { // add the countries in the area into the new arraylist
-                    pathAndAreaList.add(country);
+                for (int country : area) { // add the countries in the area into the set
+                    totalCountriesToTake.add(country);
                 }
-                totalCountriesToTake.addAll(pathAndAreaList);
-                int[] pathAndArea = convertListToIntArray(pathAndAreaList); // convert the arraylist into an array for use in getGlobCost(); pathAndArea now holds all the countries in the area we're taking over, plus any enemy countries we have to take over to get there
-                cost += getGlobCost(pathAndArea); // estimate the cost of the area and the path together and add them to <cost>
             }
+            int[] totalCountriesToTakeArray = convertListToIntArray(totalCountriesToTake); // convert to array so we can use it in getGlobCost; this array now contains every country owned by <player> and every country we'll need to take over to get to them, with no duplicates
+            int cost = getGlobCost(totalCountriesToTakeArray); // the total estimated cost of the objective
+            testChat("calculateWipeoutObjective","Countries with entry paths: " + Arrays.toString(getCountryNames(totalCountriesToTakeArray)));
             objective.put("cost", cost);
 
             // calculate and set score
@@ -555,9 +592,9 @@ public class Viking implements LuxAgent
             objective.put("score", score);
         
             return objective;
-//        } else {
-//            return null;
-//        }
+        } else {
+            return null;
+        }
     }
     
     // the idea of a Landgrab objective is just to take over a bunch of countries,
@@ -824,17 +861,32 @@ public class Viking implements LuxAgent
         }
         
         // if the values at sortKey are integers
-        if ((list.get(0).get(sortKey) instanceof Integer)) {
+        HashMap<String,Object> someElement = list.get(0); // we'll check the first element to find out what type sortKey is
+        if (someElement != null && someElement.get(sortKey) instanceof Integer) {
             // bubble-sort the arraylist by the value of sortKey
             boolean flag = true;
             HashMap temp = new HashMap();
             int v1, v2;
+            HashMap<String, Object> thisObj = new HashMap<String, Object>();
+            HashMap<String, Object> nextObj = new HashMap<String, Object>();
             int size = list.size();
             while(flag) {
                 flag = false;
                 for (int i=0; i<size-1; i++) {
-                    v1 = (Integer) list.get(i).get(sortKey);
-                    v2 = (Integer) list.get(i+1).get(sortKey);
+                    thisObj = list.get(i); // the element we're on
+                    nextObj = list.get(i+1); // the next element, to compare it to
+                    
+                    if (thisObj != null && thisObj.containsKey(sortKey)) { // if this element has the sortKey
+                        v1 = (Integer) thisObj.get(sortKey); // assign the sortKey value to v1
+                    } else { // and if it doesn't
+                        v1 = Integer.MIN_VALUE; // assign v1 the lowest possible value, so this element will be moved to the end
+                    }
+                    if (nextObj != null && nextObj.containsKey(sortKey)) { // if the next element has the sortKey
+                        v2 = (Integer) nextObj.get(sortKey); // assign the sortKey value to v2
+                    } else { // and if it doesn't
+                        v2 = Integer.MIN_VALUE; // assign v2 the lowest possible value
+                    }
+                    
                     if (v1 < v2) {
                         temp = list.get(i); // store the value at i
                         list.remove(i); // remove the ith element, and everything after it shifts to the left
@@ -845,17 +897,31 @@ public class Viking implements LuxAgent
             }
         }
         // if the values at sortKey are floats
-        else if ((list.get(0).get(sortKey) instanceof Float)) {
+        else if (someElement != null && someElement.get(sortKey) instanceof Float) {
             // bubble-sort the arraylist by the value of sortKey
             boolean flag = true;
             HashMap temp = new HashMap();
             float v1, v2;
+            HashMap<String, Object> thisObj = new HashMap<String, Object>();
+            HashMap<String, Object> nextObj = new HashMap<String, Object>();
             int size = list.size();
             while(flag) {
                 flag = false;
                 for (int i=0; i<size-1; i++) {
-                    v1 = (Float) list.get(i).get(sortKey);
-                    v2 = (Float) list.get(i+1).get(sortKey);
+                    thisObj = list.get(i); // the element we're on
+                    nextObj = list.get(i+1); // the next element, to compare it to
+                    
+                    if (thisObj != null && thisObj.containsKey(sortKey)) { // if this element has the sortKey
+                        v1 = (Float) thisObj.get(sortKey); // assign the sortKey value to v1
+                    } else { // and if it doesn't
+                        v1 = -Float.MAX_VALUE; // assign v1 the lowest possible value, so this element will be moved to the end
+                    }
+                    if (nextObj != null && nextObj.containsKey(sortKey)) { // if the next element has the sortKey
+                        v2 = (Float) nextObj.get(sortKey); // assign the sortKey value to v2
+                    } else { // and if it doesn't
+                        v2 = -Float.MAX_VALUE; // assign v2 the lowest possible value
+                    }
+                    
                     if (v1 < v2) {
                         temp = list.get(i); // store the value at i
                         list.remove(i); // remove the ith element, and everything after it shifts to the left
@@ -2540,5 +2606,10 @@ public class Viking implements LuxAgent
             array[i] = list.get(i);
         }
         return array;
+    }
+    // overloaded version to allow us to pass a set in place of a list
+    protected int[] convertListToIntArray(Set<Integer> set) {
+        ArrayList<Integer> list = new ArrayList<Integer>(set);
+        return convertListToIntArray(list);
     }
 }
