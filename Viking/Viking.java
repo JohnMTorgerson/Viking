@@ -99,6 +99,7 @@ public class Viking implements LuxAgent
         for (int i=0; i<topics.length; i++) {
             if (topic == topics[i]) {
                 board.sendChat(message);
+                //System.out.println(message);
             }
         }
     }
@@ -356,7 +357,7 @@ public class Viking implements LuxAgent
                         } else if (elementType == "wipeout") {
                             newElement = calculateWipeoutObjective((Integer) element.get("playerID")); // recalculate wipeout objective by passing the player ID
                         }
-                        if (!newElement.isEmpty() && newElement != null) { // if the recalculated objective isn't empty or null
+                        if (newElement != null && !newElement.isEmpty()) { // if the recalculated objective isn't empty or null
                             objectiveList.set(i, newElement); // replace the old one with it
                         } else { // otherwise the element is null (e.g. if the knockout continent is/will be no longer owned by an enemy; i.e. we picked a path through it)
                             objectiveList.remove(i); // remove it from the list
@@ -366,12 +367,15 @@ public class Viking implements LuxAgent
                     
                     // re-sort the list
                     sortObjectives(objectiveList, "score");
-                    
-                } else { // this objective doesn't exist
-                    objectiveList.remove(0); // so remove it and move on to the next one
-                    testChat("placeArmies", "****** ERROR: OBJECTIVE IS NULL");
                 }
+            } else { // this objective doesn't exist
+                objectiveList.remove(0); // so remove it and move on to the next one
+                testChat("placeArmies", "****** ERROR: OBJECTIVE IS NULL");
             }
+        }
+        if (numberOfArmies > 0) {
+            System.out.println("Viking: We've ended placement, but we still have armies......what a bozo.");
+            System.out.println("        number of armies: " + numberOfArmies + ", objectives left: " + objectiveList.size());
         }
     }
     
@@ -418,14 +422,13 @@ public class Viking implements LuxAgent
                     leaveArmies = forkArmies + garrisonArmies;
                     
                     // now we attack
-                    if (countries[attackRoute[j]].getArmies() > 1) { // if we have > 1 army in the attacking country
+                    if (countries[attackRoute[j]].getOwner() == ID && countries[attackRoute[j]].getArmies() > 1) { // if we have > 1 army in the attacking country
                         board.attack(attackRoute[j],attackRoute[j+1],true); // attack the next country in the route
                     } else {
+                        testChat("attackPhase","Can't attack from " + countries[attackRoute[j]].getName() + " because we don't own it");
                         break;
                     }
                 }
-            } else {
-//                testChat("attackPhase", "We do not own the starting country of this route");
             }
         }
         
@@ -1930,7 +1933,14 @@ public class Viking implements LuxAgent
     // takes an integer array of country codes and returns a string array of the associated country names
     // useful for testing purposes
     protected String[] getCountryNames(int[] codes) {
-        int size = codes.length;
+        int size = 0;
+        try {
+            size = codes.length;
+        } catch (NullPointerException e) {
+            System.err.println("Viking says: NullPointerException: " + e.getMessage());
+            e.printStackTrace();
+            return new String[]{"[error: null]"};
+        }
         String[] names = new String[size];
         for (int i=0; i<size; i++) {
             names[i] = countries[codes[i]].getName().replace(",",""); // get rid of commas in country names because that's confusing when we output the whole array as a string
