@@ -126,7 +126,10 @@ public class Viking implements LuxAgent
     public void cardsPhase( Card[] cards ) {
     }
     
-    
+    // place armies at the beginning of each turn
+    // we've created an overloaded version of placeArmies() that takes an additional boolean parameter
+    // this simply tells us whether it was called by placeInitialArmies() or not;
+    // this is useful because there are a few behaviors that need to be different in that case
     public void placeArmies(int numberOfArmies, boolean initial) {
         testChat("placeArmies",
                  "\n**********************************************" +
@@ -134,15 +137,18 @@ public class Viking implements LuxAgent
                  "\n**************** PLACE ARMIES ****************" +
                  "\n**********************************************" +
                  "\n**********************************************" +
-                 "\n total enemy income: " + getTotalEnemyIncome());
-        
-        System.out.println("Place Armies");
-
+                 "\n Our income: " + board.getPlayerIncome(ID) + " - Total enemy income: " + getTotalEnemyIncome());
         
         // the <initial> boolean is a flag that tells us if this function
-        // was called from placeInitialArmies(); we want to clear battlePlan
+        // was called from placeInitialArmies(); we want to clear <battlePlan>
         // every turn, but we don't want to clear it in between placeInitialArmies()
-        // calls at the beginning of the game
+        // calls at the beginning of the game;
+        // <battlePlan> is emptied each turn one path at a time in attackPhase(),
+        // so normally it will already be empty here; however, we have to clear it anyway
+        // for the special case that placeArmies() was called in the middle of a turn,
+        // which happens when we wipeout an enemy and get to cash cards mid-turn;
+        // in that case, we want to create a new <battlePlan> from scratch, erasing the old one
+        // that attackPhase() is in the middle of, and letting it do the new one instead
         if (initial == false) {
             battlePlan.clear();
         }
@@ -153,7 +159,7 @@ public class Viking implements LuxAgent
         // this array list will hold all of the possible objectives we can pursue this turn
         ArrayList<HashMap> objectiveList = new ArrayList<HashMap>();
         
-        // find and list of objectives to knockout enemy bonuses
+        // find and add list of objectives to knockout enemy bonuses
         objectiveList.addAll(findKnockoutObjectives());
         
         // find and add list of continent takeover objectives
@@ -162,7 +168,7 @@ public class Viking implements LuxAgent
         // add landgrab objective
         objectiveList.add(calculateLandgrabObjective(numberOfArmies));
         
-        // add wipeout objectives
+        // find and add wipeout objectives
         ArrayList<HashMap> tempWipeouts = findWipeoutObjectives();
         chatObjectives("placeArmies",tempWipeouts);
         objectiveList.addAll(tempWipeouts);
@@ -170,89 +176,27 @@ public class Viking implements LuxAgent
         // sort all the objectives by score
         sortObjectives(objectiveList, "score");
         
+        // display a summary of each objective for debugging purposes
+        testChat("placeArmies", "--- " + objectiveList.size() + " Possible Objectives: ---");
+        for (HashMap objective : objectiveList) {
+            String summary = "";
+            if (objective != null) {
+                summary = (String) objective.get("summary");
+            } else {
+                summary = "[null objective]";
+            }
+            testChat("placeArmies", summary);
+        }
+        testChat("placeArmies", "****** Objectives we're choosing: ******");
+    
         // loop through all objectives in order of score
         // picking as many as we can until we're out of armies
-        // and placing armies on the appropriate routes
+        // and placing armies on the appropriate routes as we go
         while (numberOfArmies > 0 && objectiveList.size() > 0) {
-            
-//            testChat("placeArmies", "-- BATTLE PLAN: --");
-//            chatCountryNames("placeArmies", battlePlan);
-//            testChat("placeArmies", "-- --");
-            
-            // first we will calculate a langrab objective and add it to the list of objectives in the appropriate place according to its score;
-            // landgrab objectives work a little differently than the others; we only need one landgrab objective at a time;
-            // it is calculated based on a number of armies it is allowed to use;
-            // each time we loop around to pick an objective, we will calculate a landgrab objective
-            // that uses all of the reamining armies we have available, and remove the one we added last time (if it's still there)
-/*            HashMap landgrab = calculateLandgrabObjective(numberOfArmies);
-            if (landgrab != null) { // if the landgrab objective was successfully created (the only time this shouldn't be the case is if there aren't any available enemy countries to attack at all)
-                // remove any old landgrab objectives
-                Iterator<HashMap> iter = objectiveList.iterator();
-                while (iter.hasNext()) { // loop through the objectives list
-                    // remove the old objective
-                    if ((String) iter.next().get("type") == "landgrab") {
-                        iter.remove(); // remove it
-                    }
-                }
-                
-                // add the new landgrab objective
-                for (int i=0, length=objectiveList.size(); i<length; i++) { // loop through the objectives list
-                    // if this objective's score is lesser than or equal to <landgrab>,
-                    // then add <landgrab> in front of it and break the loop
-                    if ((Float) objectiveList.get(i).get("score") <= (Float) landgrab.get("score")) {
-                        objectiveList.add(i,landgrab);
-                        break;
-                    }
-                }
-            }
-*/
-            
-            
-            testChat("placeArmies", "~~~~~~~~~~~ LOOP ~~~~~~~~~~~ (Armies Left: " + numberOfArmies + ")");
-            
-            testChat("placeArmies", "--- " + objectiveList.size() + " Possible Objectives: ---");
-            for (HashMap objective : objectiveList) {
-                String message = "";
-                
-                if (objective != null) {
-                    message += (String) objective.get("type");
-                    message += " - score: ";
-                    String scoreStr = "" + (Float) objective.get("score");
-                    message += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
-                    message += " - ";
-                    if (objective.get("continentID") != null) {
-                        message += board.getContinentName((Integer) objective.get("continentID")) + ", ";
-                    }
-                    if (objective.get("continentIDs") != null) {
-                        message += Arrays.toString(getContinentNames((int[]) objective.get("continentIDs"))) + ", ";
-                    }
-                    if ((String) objective.get("type") == "landgrab") {
-                        ArrayList<int[]> temp = (ArrayList<int[]>) objective.get("plan");
-                        message += getCountryName(temp.get(0)[0]) + "..." + getCountryName(temp.get(0)[temp.get(0).length - 1]) + ", ";
-                    }
-                    if ((String) objective.get("type") == "wipeout") {
-                        message += (String) objective.get("playerName") + ", ";
-                    }
-                    
-                    if (objective.get("bonus") != null) {
-                        message += "bonus: " + (Integer) objective.get("bonus") + ", ";
-                    }
-                    message += "cost: ";
-                    message += (Integer) objective.get("cost");
-                    if (objective.get("oldScore") != null) {
-                        message += " - (old score: ";
-                        message += (Float) objective.get("oldScore") + ")";
-                    }
-                } else {
-                    message += "ERROR: objective is null";
-                }
-                
-                testChat("placeArmies", message);
-            }
+            // some stuff for debugging
+//            testChat("placeArmies", "~~~~~~~~~~~ LOOP ~~~~~~~~~~~ (Armies Left: " + numberOfArmies + ")");
             int testTemp = numberOfArmies;
             String chatString = "";
-            
-            
             
             // set the <picked> flag to false until we've picked an objective
             boolean picked = false;
@@ -274,7 +218,6 @@ public class Viking implements LuxAgent
                     // pick this objective if we can afford it
                     if ((Integer) objective.get("cost") <= numberOfArmies) {
                         picked = true; // set <picked> flag to true
-                        chatString = "****** Knockout " + board.getContinentName((Integer) objective.get("continentID")) + " - ";
                         
                         // add the knockout path to battlePlan
                         ArrayList<int[]> objectivePlan = (ArrayList<int[]>) objective.get("plan");
@@ -302,8 +245,6 @@ public class Viking implements LuxAgent
                     // calculate and store the desired border garrisons on the area we're taking over
                     // so that when we place the armies on battlePlan, it will know how many extra to place for the garrisons
                     setBorderStrength(takeoverArea);
-                    
-                    chatString = "****** Takeover " + Arrays.toString(getContinentNames((int[]) objective.get("continentIDs"))) + " - ";
                 }
                 // if the objective is a landgrab
                 else if (type == "landgrab") {
@@ -312,8 +253,6 @@ public class Viking implements LuxAgent
                     // add the knockout path to battlePlan
                     ArrayList<int[]> objectivePlan = (ArrayList<int[]>) objective.get("plan");
                     battlePlan.addAll(objectivePlan);
-                    
-                    chatString = "****** Landgrab from " + getCountryName(objectivePlan.get(0)[0]) + " to " + getCountryName(objectivePlan.get(0)[objectivePlan.get(0).length - 1]) + " - ";
                 }
                 // if the objective is a wipeout
                 else if (type == "wipeout") {
@@ -325,14 +264,11 @@ public class Viking implements LuxAgent
                     
                     // add those paths to battlePlan
                     battlePlan.addAll(wipeoutPlan);
-
-                    chatString = "****** Wipeout " + (String) objective.get("playerName") + " - ";
-                    System.out.println("Wiping out " + (String) objective.get("playerName"));
                 }
                 // if we got here, we don't know what this objective is, so get rid of it
                 else {
                     objectiveList.remove(0);
-                    chatString = "****** ERROR: UNKNOWN OBJECTIVE TYPE - ";
+                    testChat("placeArmies","[ERROR: UNKNOWN OBJECTIVE TYPE]");
                 }
                 
                 // if we picked an objective this loop
@@ -345,7 +281,7 @@ public class Viking implements LuxAgent
                     numberOfArmies = placeArmiesOnRoutes(battlePlan,numberOfArmies);
                     
                     testTemp = testTemp - numberOfArmies;
-                    testChat("placeArmies", chatString + "placed " + testTemp + " armies");
+                    testChat("placeArmies", (String) objective.get("summary") + ", placed " + testTemp + " armies");
                     
                     // since we've made plans for this objective, we don't need to look at it again
                     // except in the case of the landgrab objective, which we want to keep and recalculate each loop even if we picked it
@@ -386,12 +322,12 @@ public class Viking implements LuxAgent
                 }
             } else { // this objective doesn't exist
                 objectiveList.remove(0); // so remove it and move on to the next one
-                testChat("placeArmies", "****** ERROR: OBJECTIVE IS NULL");
+//                testChat("placeArmies", "[null objective]");
             }
         }
         if (numberOfArmies > 0) {
-            System.out.println("Viking: We've ended placement, but we still have armies......what a bozo.");
-            System.out.println("        number of armies: " + numberOfArmies + ", objectives left: " + objectiveList.size());
+            testChat("placeArmies","Viking: We've ended placement, but we still have armies......what a bozo.");
+            testChat("placeArmies","        number of armies: " + numberOfArmies + ", objectives left: " + objectiveList.size());
         }
     }
     public void placeArmies(int numberOfArmies) {
@@ -400,8 +336,16 @@ public class Viking implements LuxAgent
     
     // attack!
     public void attackPhase() {
+        // first some testing/debugging messages
         testChat("attackPhase", "*********** ATTACK PHASE ***********");
-        System.out.println("Attack Phase");
+        testChat("attackPhase", "Attack Routes:");
+        ArrayList<int[]> displayPlan = new ArrayList<int[]>();
+        for (int[] route : battlePlan) {
+            if (route.length > 1) {
+                displayPlan.add(route);
+            }
+        }
+        chatCountryNames("attackPhase",displayPlan);
         
         // loop through battlePlan (calculated in the placeArmies() phase),
         // which contains multiple attack routes, and execute each one
@@ -430,13 +374,11 @@ public class Viking implements LuxAgent
                     // then we have to tell moveArmiesIn() to leave some armies behind
                     // in order to take over the fork later from this point
                     int forkArmies = 0; // how many armies we want to leave behind to use for any forks from this country
-                    for (int k=1; k<battlePlan.size(); k++) { // loop through only the rest of the battlePlan paths (i.e. the ones we haven't attacked yet) to check for branch points
+                    for (int k=0; k<battlePlan.size(); k++) { // loop through only the rest of the battlePlan paths (i.e. the ones we haven't attacked yet) to check for branch points
                         if (attackRoute[j] == battlePlan.get(k)[0]) {
                             forkArmies += calculateCladeCost(battlePlan, k); // calculate cost of any clades that fork from this point, and add them all to forkArmies
                         }
                     }
-                    
-//                    if (forkArmies == 0) { testChat("attackPhase", "No forks from this country"); }
                     
                     // find out if we want to leave any armies on this country as a border garrison
                     int garrisonArmies = checkBorderStrength(attackRoute[j]);
@@ -452,11 +394,11 @@ public class Viking implements LuxAgent
                         board.attack(attackRoute[j],attackRoute[j+1],true); // attack the next country in the route
                         
                         // if we happen to have successfully attacked the last country owned by an enemy here, so that that enemy is now eliminated
-                        // Lux will call placeArmies() again and then resume attackPhase() from this point;
+                        // often we can cash cards mid-turn; when this happens, Lux will call placeArmies() again and then resume attackPhase() from this point;
                         // placeArmies() will replace <battlePlan> with a new one;
                         // in that case, the j-loop will continue executing our attack through <attackRoute>
-                        // but on the next iteration of the while loop, the new <battlePlan> will be executed from the beginning, as desired
-                        // the only source of conflict is that we probably took over the rest of <attackRoute> in the j-loop before starting on the new <battlePlan>
+                        // but on the next iteration of the while loop, the new <battlePlan> will be executed from the beginning, as desired;
+                        // the only source of conflict is that we took over the rest of <attackRoute> in the j-loop before starting on the new <battlePlan>
                         // but if any routes in the new <battlePlan> overlap those countries, it should harmlessly iterate over them
                         // since we're checking for proper ownership of the attacking and defending countries here
                     } else {
@@ -465,9 +407,6 @@ public class Viking implements LuxAgent
                 }
             }
         }
-        
-        // now that we're done with it, empty battlePlan
-//        battlePlan.clear();
         
         // now we'll do army 'garbage collection'
         // i.e. find any leftover armies that aren't being used as a border garrison
@@ -596,7 +535,8 @@ public class Viking implements LuxAgent
             objective.put("playerID", player);
         
             // set player name
-            objective.put("playerName", board.getPlayerName(player));
+            String playerName = board.getPlayerName(player);
+            objective.put("playerName", playerName);
         
             // find and set area
             int[] playerCountries = getPlayerCountries(player); // all countries owned by <player>
@@ -604,7 +544,7 @@ public class Viking implements LuxAgent
             
             // estimate and set cost
             ArrayList<int[]> contiguousAreas = findContiguousAreas(playerCountries); // break up player's countries into contiguous areas to estimate their costs separately
-            testChat("calculateWipeoutObjective","Countries owned by " + board.getPlayerName(player) + ": ");
+            testChat("calculateWipeoutObjective","Countries owned by " + playerName + ": ");
             chatCountryNames("calculateWipeoutObjective",contiguousAreas);
             Set<Integer> totalCountriesToTake = new HashSet<Integer>(); // will contain every country we mean to take over, including any entry paths we need; we're using a hashset to avoid duplicates
             for(int[] area : contiguousAreas) { // loop through all the contiguous areas
@@ -634,6 +574,13 @@ public class Viking implements LuxAgent
             enemyLoss += cardsValue;
             float score = 10f * ((float) gain + enemyLoss) / ((float) cost + 0.00001f); // the score is our gain + the enemies' loss divided by cost and the square root of the number of turns it will take (to discourage large projects)
             objective.put("score", score);
+            
+            // create and set summary string (this is just useful for debugging)
+            String summary = "wipeout   - score: ";
+            String scoreStr = "" + score;
+            summary += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
+            summary += " - " + playerName + ", cost: " + cost;
+            objective.put("summary", summary);
         
             return objective;
         } else {
@@ -781,7 +728,13 @@ public class Viking implements LuxAgent
             // set score
             objective.put("score", highestScore);
             
-            // placeArmies() should call this function once per loop and add the objective to its list
+            // set summary string (this is just useful info for debugging)
+            String summary = "landgrab  - score: ";
+            String scoreStr = "" + highestScore;
+            summary += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
+            summary += " - " + getCountryName(route[0]) + "..." + getCountryName(route[route.length - 1]) + ", ";
+            summary += "cost: " + pickedPathCost;
+            objective.put("summary", summary);
             
             return objective;
         } else {
@@ -877,7 +830,7 @@ public class Viking implements LuxAgent
         }
         objective.put("cost", cost);
         
-        // calculate and set score
+        // calculate and set score (legacy)
         float turns = Math.max(1, (float) cost / ((float) board.getPlayerIncome(ID) + .00001f));
         float score = 10f * (float) bonus / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5));
         objective.put("oldScore", score);
@@ -891,6 +844,14 @@ public class Viking implements LuxAgent
         enemyLoss /= 3 * getTotalEnemyIncome() + 0.00001f; // divide the total by 3, because every 3 countries is worth 1 income point, and divide by total enemy income and add a tiny fudge just in case <totalEnemyIncome> is 0
         score = 10f * ((float) gain + enemyLoss) / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5)); // the score is our gain + the enemies' loss divided by cost and the square root of the number of turns it will take (to discourage large projects)
         objective.put("score", score);
+        
+        // set summary string (this is just useful info for debugging)
+        String summary = "takeover  - score: ";
+        String scoreStr = "" + score;
+        summary += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
+        summary += " - " + Arrays.toString(getContinentNames(continents)) + ", ";
+        summary += "bonus: " + bonus + ", cost: " + cost;
+        objective.put("summary", summary);
         
         return objective;
     }
@@ -1050,6 +1011,14 @@ public class Viking implements LuxAgent
             score = 10f * (countriesGain + continentGain) / (cost + 0.00001f); // score is the total gain divided by the cost
             objective.put("score", score);
             
+            // set summary string (just some useful info for debugging)
+            String summary = "knockout - score: ";
+            String scoreStr = "" + score;
+            summary += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
+            summary += " - " + board.getContinentName(continent);
+            summary += ", bonus: " + bonus + ", cost: " + cost;
+            objective.put("summary", summary);
+            
             return objective;
         } else {
             return null;
@@ -1109,7 +1078,7 @@ public class Viking implements LuxAgent
     // called by calculateBorderStrength()
     // returns the magnitude of the greatest nearby enemy threat to the given border country
     protected int findGreatestThreat(int borderCountry, int[] area) {
-        int maxDepth = 3; // the depth we want to search out to
+        int maxDepth = 5; // the depth we want to search out to
         int currentDepth = 0; // begin with a depth of 0
         int armiesThusFar = 0; // the armies on a given path so far
         ArrayList<Integer> blacklist = new ArrayList<Integer>(); // the blacklist keeps track of the players whose countries we've seen so far along a given path
