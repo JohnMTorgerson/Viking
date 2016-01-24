@@ -116,14 +116,18 @@ public class Viking implements LuxAgent
         
 //        chatContinentNames();
 
-        // do exactly as we do at the beginning of a normal turn
-        placeArmies(numberOfArmies);
+        // simply call placeArmies(), but we pass 'true' as the second parameter
+        // to tell it that we're calling it from placeInitialArmies(), because a few
+        // things need to be handled differently when we're placing armies at the
+        // beginning of the game
+        placeArmies(numberOfArmies, true);
     }
     
     public void cardsPhase( Card[] cards ) {
     }
     
-    public void placeArmies(int numberOfArmies) {
+    
+    public void placeArmies(int numberOfArmies, boolean initial) {
         testChat("placeArmies",
                  "\n**********************************************" +
                  "\n**********************************************" +
@@ -131,6 +135,17 @@ public class Viking implements LuxAgent
                  "\n**********************************************" +
                  "\n**********************************************" +
                  "\n total enemy income: " + getTotalEnemyIncome());
+        
+        System.out.println("Place Armies");
+
+        
+        // the <initial> boolean is a flag that tells us if this function
+        // was called from placeInitialArmies(); we want to clear battlePlan
+        // every turn, but we don't want to clear it in between placeInitialArmies()
+        // calls at the beginning of the game
+        if (initial == false) {
+            battlePlan.clear();
+        }
         
         // clear the global <borderArmies> HashMap, which stores the border garrison strength for each border country of each area we want to take over
         borderArmies.clear();
@@ -312,6 +327,7 @@ public class Viking implements LuxAgent
                     battlePlan.addAll(wipeoutPlan);
 
                     chatString = "****** Wipeout " + (String) objective.get("playerName") + " - ";
+                    System.out.println("Wiping out " + (String) objective.get("playerName"));
                 }
                 // if we got here, we don't know what this objective is, so get rid of it
                 else {
@@ -378,19 +394,29 @@ public class Viking implements LuxAgent
             System.out.println("        number of armies: " + numberOfArmies + ", objectives left: " + objectiveList.size());
         }
     }
+    public void placeArmies(int numberOfArmies) {
+        placeArmies(numberOfArmies, false);
+    }
     
     // attack!
     public void attackPhase() {
         testChat("attackPhase", "*********** ATTACK PHASE ***********");
+        System.out.println("Attack Phase");
         
         // loop through battlePlan (calculated in the placeArmies() phase),
         // which contains multiple attack routes, and execute each one
-        for (int i=0; i<battlePlan.size(); i++) {
+        //for (int i=0; i<battlePlan.size(); i++) {
+        while (battlePlan.size() > 0) {
 //            testChat("attackPhase", "------- Attack route: -------");
 //            chatCountryNames("attackPhase", battlePlan.get(i));
             
-            if (countries[battlePlan.get(i)[0]].getOwner() == ID) { // if we own the first country in the path
-                int[] attackRoute = battlePlan.get(i);
+            // store the first route in the plan
+            int[] attackRoute = battlePlan.get(0);
+            
+            // remove that route from the plan
+            battlePlan.remove(0);
+            
+            if (countries[attackRoute[0]].getOwner() == ID) { // if we own the first country in the path
                 
 //                testChat("attackPhase", "First country on route has " + countries[attackRoute[0]].getArmies() + " armies.");
                 
@@ -404,7 +430,7 @@ public class Viking implements LuxAgent
                     // then we have to tell moveArmiesIn() to leave some armies behind
                     // in order to take over the fork later from this point
                     int forkArmies = 0; // how many armies we want to leave behind to use for any forks from this country
-                    for (int k=i+1; k<battlePlan.size(); k++) { // loop through only the rest of the battlePlan paths (i.e. the ones we haven't attacked yet) to check for branch points
+                    for (int k=1; k<battlePlan.size(); k++) { // loop through only the rest of the battlePlan paths (i.e. the ones we haven't attacked yet) to check for branch points
                         if (attackRoute[j] == battlePlan.get(k)[0]) {
                             forkArmies += calculateCladeCost(battlePlan, k); // calculate cost of any clades that fork from this point, and add them all to forkArmies
                         }
@@ -422,25 +448,40 @@ public class Viking implements LuxAgent
                     leaveArmies = forkArmies + garrisonArmies;
                     
                     // now we attack
-                    if (countries[attackRoute[j]].getOwner() == ID && countries[attackRoute[j]].getArmies() > 1) { // if we have > 1 army in the attacking country
+                    if (countries[attackRoute[j]].getOwner() == ID && countries[attackRoute[j]].getArmies() > 1 && countries[attackRoute[j+1]].getOwner() != ID) { // if we own the attacking country (and have > 1 army in it) and we don't own the defending country
                         board.attack(attackRoute[j],attackRoute[j+1],true); // attack the next country in the route
+                        
+                        // if we happen to have successfully attacked the last country owned by an enemy here, so that that enemy is now eliminated
+                        // Lux will call placeArmies() again and then resume attackPhase() from this point;
+                        // placeArmies() will replace <battlePlan> with a new one;
+                        // in that case, the j-loop will continue executing our attack through <attackRoute>
+                        // but on the next iteration of the while loop, the new <battlePlan> will be executed from the beginning, as desired
+                        // the only source of conflict is that we probably took over the rest of <attackRoute> in the j-loop before starting on the new <battlePlan>
+                        // but if any routes in the new <battlePlan> overlap those countries, it should harmlessly iterate over them
+                        // since we're checking for proper ownership of the attacking and defending countries here
                     } else {
-                        testChat("attackPhase","Can't attack from " + countries[attackRoute[j]].getName() + " because we don't own it");
-                        break;
+                        testChat("attackPhase","Can't attack from " + countries[attackRoute[j]].getName() + " to " + countries[attackRoute[j+1]].getName());
                     }
                 }
             }
         }
         
         // now that we're done with it, empty battlePlan
-        battlePlan.clear();
+//        battlePlan.clear();
         
         // now we'll do army 'garbage collection'
         // i.e. find any leftover armies that aren't being used as a border garrison
         // and use them to attack any enemy neighbors they have
         
+        // get all the countries we own
+        ArrayList<Integer> ourCountries = new ArrayList<Integer>();
+        for (Country country : countries) {
+            if (country.getOwner() == ID) {
+                ourCountries.add(country.getCode());
+            }
+        }
+
         // loop through all the countries we own
-        int[] ourCountries = getPlayerCountries();
         for (int country : ourCountries) {
             // the amount of armies on this country that we don't need for a border garrison
             int extraArmies = countries[country].getArmies() - checkBorderStrength(country) - 1;
