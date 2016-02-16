@@ -1268,18 +1268,26 @@ public class Viking implements LuxAgent
     // note that "cost" in this function is not simply the number of enemy armies in the way
     // rather, it is an estimate of how many armies it will actually take to conquer the given path
     protected int getPathCost(int[] path) {
-        float cost = 0;
-        for (int i=1; i<path.length; i++) { // loop through the path, beginning on the SECOND country
-            cost += countries[path[i]].getArmies(); // add enemy armies to the cost
+        double cost = 0;
+        for (int i=1; i<path.length-1; i++) { // loop through the path, beginning on the SECOND country and ending on the SECOND TO LAST country (we'll do the last country separately after the loop)
+            // this is the formula to calculate the number of armies needed to win an intermediate battle (one not at the end of a path, in which the attacker always gets to roll 3 dice) with 78% certainty (the choice to use 78% was just a judgment call)
+            int defenders = countries[path[i]].getArmies(); // enemy armies on this country
+            cost += (7161d / 8391d) * (double) defenders + (1.3316d * Math.pow((double) defenders,.4665d));
         }
+        // now get the cost for the last battle in the path at 78% certainty (the formula is different because this is a terminal battle and the attacker won't always get to roll 3 dice)
+        if (path.length > 1) {
+            int defenders = countries[path[path.length-1]].getArmies(); // the enemy armies on the last country
+            cost += (7161d / 8391d) * (double) defenders + (1.7273d * Math.pow((double) defenders,.4301d));
+        }
+        
         
         // here comes the subjective part
         // cost so far contains just the number of enemy armies
         // but this number isn't enough to ensure a successful takeover, so we will add a buffer
-        cost *= 1.1; // add a buffer of 10% of the enemy armies
-        cost += path.length - 1; // add 1 additional army for each country in the path, since we always have to leave 1 behind as we attack
+        //cost *= 1.1; // add a buffer of 10% of the enemy armies
+        //cost += path.length - 1; // add 1 additional army for each country in the path, since we always have to leave 1 behind as we attack
         
-        return (int) Math.ceil(cost); // round UP to the nearest integer and return
+        return (int) Math.round(cost); // round to the nearest integer and return
     }
     
     // when first estimating the cost of taking over an area without calculating all the actual attack paths,
