@@ -562,8 +562,6 @@ public class Viking implements LuxAgent
             objective.put("cost", cost);
 
             // calculate and set score
-            //
-            // for the score, we
             float cardsValue = ((float) board.getPlayerCards(player) / 3.0f) * (float) board.getNextCardSetValue();  //(each card is treated as 1/3 the value of the next card set)
             float gain = (float) totalCountriesToTake.size() / 6.0f + cardsValue; // <gain> is the expected increase in our income: mainly the value of the cards we'll get, but also the number of countries we'll take over divided by 3, and then by 2 (an arbitrary reduction to account for the probability that we won't keep these countries)
             float enemyLoss = 0.0f; // <enemyLoss> is how much we reduce the bonus of any enemies we travel through, weighted by their relative income
@@ -1051,18 +1049,38 @@ public class Viking implements LuxAgent
     protected int calculateBorderStrength(int country, int[] area, int numBorders, int areaBonus) {
         int strength = 0;
         if (isAreaBorder(country, area)) { // if <country> is a border of <area>
-            int income = board.getPlayerIncome(ID); // our income
-            int greatestThreat = findGreatestThreat(country, area); // highest value of extant armies + player income among nearby countries
-            int biggestBonus = getBiggestContinentBonus();
-            double areaValue  = Math.pow(areaBonus, 0.5)/Math.pow(biggestBonus, 0.5); // relative value of this bonus compared to highest bonus
             
-            // formula to set <strength> based on the relevant factors
+            // find the greatest nearby threat to this border
+            // this is the highest value of (extant armies + player income) among all nearby countries
+            int greatestThreat = findGreatestThreat(country, area);
+            
+            // find the relative value of this area compared to the highest continent bonus on this map
+            // which we'll use to tailor the garrison strength for this country to the area's "importance" as it were
+            int biggestBonus = getBiggestContinentBonus();
+            double areaValue = Math.pow(areaBonus, 0.5)/Math.pow(biggestBonus, 0.5); // we soften the ratio a bit by using square roots
+            
+            // find any armies we may already have on this country
+            // and decide the maximum number of armies we want to add to that each turn (as a portion of our income)
+            // (up to the ideal value, which we'll calculate later)
+            double incomePortion = (double) board.getPlayerIncome(ID) / 4.0d; // our income divided by
+            int extantArmies = 0; // the number of (our) armies on this country, if any
+            if (countries[country].getOwner() == ID) { // if we (actually) own the country
+                extantArmies = countries[country].getArmies(); // get the extant armies
+            }
+            // here we cheat a little, and just make sure that <extantArmies> is never reported as less than <incomePortion> (rounded up);
+            // that just gives us a boost when we're first putting garrisons on this country,
+            // by allowing us to put double <incomePortion> the first time around
+            extantArmies = (int) Math.ceil(Math.max(extantArmies, incomePortion));
+            
+            // so now we're ready to calculate the strength;
             // sets <strength> to the biggest nearby threat, scaled down by the relative value of the bonus we're protecting
-            // for a small bonus it will have an insufficient border, and the largest bonus on the board
-            // will have a bonus equal to <greatestThreat>
-            // except if <income>/3 is smaller than that number, in which case we limit <strength> to that
+            // for a small bonus it will have an insufficient border,
+            // and the largest bonus on the board will have a bonus equal to <greatestThreat>
+            // except if <extantArmies> + <incomePortion> is smaller than that number, in which case we limit <strength> to that
+            // so we never have to add more than that much of our income at once
             // in order to keep the border garrison requirements from being out of control
-            strength = (int) Math.ceil(Math.min(greatestThreat * areaValue, (double) income / 2));
+            // but the garrison will be allowed to grow each turn until it reaches the ideal value
+            strength = (int) Math.ceil(Math.min(greatestThreat * areaValue, extantArmies + incomePortion));
             
             testChat("calculateBorderStrength", "Border strength of " + countries[country].getName() + " is " + strength);
         }
@@ -1111,7 +1129,7 @@ public class Viking implements LuxAgent
             // be able to get to the area along this path, because it will run into itself, in which case
             // we will leave threat at 0, as it was initially assigned)
             if (!isInArray(owner, blacklist)) {
-                threat = Math.max(0,armies + board.getPlayerIncome(owner) - armiesThusFar - currentDepth);
+                threat = Math.max(0,armies + getPlayerIncomeAndCards(owner) - armiesThusFar - currentDepth);
                 blacklist.add(owner); // now we've seen this owner on this path, so add it to blacklist
             }
             
@@ -1220,8 +1238,8 @@ public class Viking implements LuxAgent
     
     // calculates the cost of taking over a clade
     // a clade is a monophyletic tree of paths, i.e. a path and all of its forks (and all of their forks, etc.)
-    // clades are not represented in our code as single objects, so this function must find the forks of the initial path itself
-    // the function is passed the entire battle plan ("plan"), which may contain multiple clades, and an index, which tells it which original path in the plan to work on
+    // clades are not represented in our code as single objects, so this function must find the forks of the initial path itself;
+    // the function is passed the entire battle plan ("plan"), which may contain multiple clades, and an index, which tells it which original path in the plan to work on;
     // it follows that original path only, and finds all of its forks, and calls itself recursively to find all of its forks' forks, etc.
     // and adds up all of their costs together and returns that number
     protected int calculateCladeCost(ArrayList<int[]> plan, int index) {
@@ -1270,22 +1288,15 @@ public class Viking implements LuxAgent
     protected int getPathCost(int[] path) {
         double cost = 0;
         for (int i=1; i<path.length-1; i++) { // loop through the path, beginning on the SECOND country and ending on the SECOND TO LAST country (we'll do the last country separately after the loop)
-            // this is the formula to calculate the number of armies needed to win an intermediate battle (one not at the end of a path, in which the attacker always gets to roll 3 dice) with 78% certainty (the choice to use 78% was just a judgment call)
+            // this is the (approximated) formula to calculate the number of armies needed to win an intermediate battle (one not at the end of a path, so the attacker always gets to roll 3 dice) with 78% certainty (the choice to use 78% was just a judgment call)
             int defenders = countries[path[i]].getArmies(); // enemy armies on this country
             cost += (7161d / 8391d) * (double) defenders + (1.3316d * Math.pow((double) defenders,.4665d));
         }
-        // now get the cost for the last battle in the path at 78% certainty (the formula is different because this is a terminal battle and the attacker won't always get to roll 3 dice)
+        // now get the cost for the last battle in the path at 78% certainty (the formula is different because this is a terminal battle (at the end of a path) so the attacker may have to roll 2 dice or 1 die near the end of the battle)
         if (path.length > 1) {
             int defenders = countries[path[path.length-1]].getArmies(); // the enemy armies on the last country
             cost += (7161d / 8391d) * (double) defenders + (1.7273d * Math.pow((double) defenders,.4301d));
         }
-        
-        
-        // here comes the subjective part
-        // cost so far contains just the number of enemy armies
-        // but this number isn't enough to ensure a successful takeover, so we will add a buffer
-        //cost *= 1.1; // add a buffer of 10% of the enemy armies
-        //cost += path.length - 1; // add 1 additional army for each country in the path, since we always have to leave 1 behind as we attack
         
         return (int) Math.round(cost); // round to the nearest integer and return
     }
@@ -1588,7 +1599,7 @@ public class Viking implements LuxAgent
     }
     
     // called in the placeArmies() and placeInitialArmies() phases
-    // given that the bot has already chosen a continent (or abstract area) to pursue, this function should find a comprehensive plan
+    // given that the bot has already chosen an area to pursue, this function should find a comprehensive plan
     // to takeover that continent/area in the form of a set of int[] arrays of country codes that form attack paths from countries we own
     // this function calls getAreaTakeoverPaths() to get a list of all possible takeover paths (allPaths) through a given country list (area)
     // then finds a comprehensive set of paths that pass through every enemy country in the area, including forks and islands
@@ -1850,8 +1861,7 @@ public class Viking implements LuxAgent
         return terminalPaths;
     }
     
-    //given an area, find all contiguous areas within it
-    //e.g.
+    //given a list of countries, clump the countries into all possible contiguous areas
     protected ArrayList findContiguousAreas(int[] countryArray) {
         ArrayList<int[]> contiguousAreaList = new ArrayList<int[]>();
         ArrayList<Integer> countryList = new ArrayList<Integer>();
@@ -2624,6 +2634,14 @@ public class Viking implements LuxAgent
             }
         }
         return totalEnemyIncome;
+    }
+    
+    // returns the income of the given player including their potential income from cars
+    // (the value of the next card set * 1/3 the number of cards they have)
+    protected int getPlayerIncomeAndCards(int player) {
+        int income = board.getPlayerIncome(player); // the player's actual income
+        income += Math.ceil((double) board.getPlayerCards(player) / 3.0d * (double) board.getNextCardSetValue());  // add the value of their cards, rounded up (each card is treated as 1/3 the value of the next card set)
+        return income;
     }
     
     // converts an arraylist of integers into an array of integers
