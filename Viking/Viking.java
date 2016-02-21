@@ -153,8 +153,18 @@ public class Viking implements LuxAgent
             battlePlan.clear();
         }
         
-        // clear the global <borderArmies> HashMap, which stores the border garrison strength for each border country of each area we want to take over
-        borderArmies.clear();
+        // reset the global <borderArmies> HashMap, which stores the border garrison strength for each border country of each area we want to take over
+        // instead of completely clearing it from the previous turn, we want to set each entry to the number of armies
+        // that are actually on that country (and if we don't own the country anymore, remove it from the hashmap);
+        // the reason for doing this is so we can keep those armies reserved so they aren't used for anything else,
+        // even if we don't pick the takeover objective that uses these borders this particular turn;
+        // so why set them to the number of extant armies instead of just leaving the value set to the ideal border strength
+        // for that country as they were last turn? because we don't want to have to sink more armies into this country
+        // if we don't need to (which could otherwise happen if another objective had to interact with this country);
+        // if a takeover objective IS picked this turn that uses any of these countries as a border, it will simply overwrite
+        // that value in the hashmap with whatever it wants to put there as a border;
+        // the values we're setting here only matter if we don't pick that objective this turn;
+        resetBorderArmies();
         
         // this array list will hold all of the possible objectives we can pursue this turn
         ArrayList<HashMap> objectiveList = new ArrayList<HashMap>();
@@ -165,7 +175,7 @@ public class Viking implements LuxAgent
         // find and add list of continent takeover objectives
         objectiveList.addAll(findTakeoverObjectives());
         
-        // add landgrab objective
+        // create and add landgrab objective
         objectiveList.add(calculateLandgrabObjective(numberOfArmies));
         
         // find and add wipeout objectives
@@ -201,9 +211,9 @@ public class Viking implements LuxAgent
             // set the <picked> flag to false until we've picked an objective
             boolean picked = false;
             
-            // the objective with the highest score
-            // we'll pick this objective except in the special case that it's a knockout objective
-            // that costs more than we can afford
+            // the first objective in the sorted list is the objective with the highest score;
+            // we'll pick this objective (except in the special case that it's a knockout objective
+            // that costs more than we can afford in a single turn)
             HashMap<String, Object> objective = objectiveList.get(0);
             
             if (objective != null) {
@@ -422,26 +432,31 @@ public class Viking implements LuxAgent
 
         // loop through all the countries we own
         for (int country : ourCountries) {
-            // the amount of armies on this country that we don't need for a border garrison
-            int extraArmies = countries[country].getArmies() - checkBorderStrength(country) - 1;
-            // if we have any extra armies to work with, we'll attack some enemies until we run out
-            if (extraArmies > 0) {
-                
-                testChat("attackPhase", "Performing garbage collection on " + getCountryName(country));
-                
-                int attackingCountry = country;
-                while (extraArmies > 0) { // attack another country on each loop until we run out of armies
-                    int defendingCountry = findWeakestNeighborOwnedByStrongestEnemy(attackingCountry); // pick the best enemy neighbor to attack
-                    if (defendingCountry == -1) { // if the above function returned -1, it didn't find any enemy neighbors
-                        break; // so break the while loop, since we can't attack anyone
-                    }
-                    leaveArmies = checkBorderStrength(attackingCountry); // <leaveArmies> is a global variable that tells moveArmiesIn() how many armies to leave behind after an attack
-                    board.attack(attackingCountry,defendingCountry,true); // attack the country we picked
-                    if (countries[defendingCountry].getOwner() == ID) { // if we now own the country, then the attack was successful
-                        extraArmies = countries[defendingCountry].getArmies() - checkBorderStrength(defendingCountry) - 1; // reset <extraArmies> for new country
-                        attackingCountry = defendingCountry; // set the country we just conquered as the new attacking country
-                    } else { // we ran out of armies before conquering the country
-                        extraArmies = 0; // so we have zero armies left, and we're done
+            // only perform garbage collection on countries that are not in the <borderArmies> HashMap at all;
+            // that way we leave any extra armies there might be on a border garrison
+            // even when placeArmies() thinks they're superfluous this turn; we might want them there later
+            if (!borderArmies.containsKey(country)) {
+                // the amount of extra armies on this country
+                int extraArmies = countries[country].getArmies() - 1;// - checkBorderStrength(country); // (don't need to check the border strength anymore since we're not garbage collecting on countries with border garrisons)
+                // if we have any extra armies to work with, we'll attack some enemies until we run out
+                if (extraArmies > 0) {
+                    
+                    testChat("attackPhase", "Performing garbage collection on " + getCountryName(country));
+                    
+                    int attackingCountry = country;
+                    while (extraArmies > 0) { // attack another country on each loop until we run out of armies
+                        int defendingCountry = findWeakestNeighborOwnedByStrongestEnemy(attackingCountry); // pick the best enemy neighbor to attack
+                        if (defendingCountry == -1) { // if the above function returned -1, it didn't find any enemy neighbors
+                            break; // so break the while loop, since we can't attack anyone
+                        }
+                        leaveArmies = checkBorderStrength(attackingCountry); // <leaveArmies> is a global variable that tells moveArmiesIn() how many armies to leave behind after an attack
+                        board.attack(attackingCountry,defendingCountry,true); // attack the country we picked
+                        if (countries[defendingCountry].getOwner() == ID) { // if we now own the country, then the attack was successful
+                            extraArmies = countries[defendingCountry].getArmies() - 1;// - checkBorderStrength(defendingCountry); // reset <extraArmies> for new country (don't need to check the border strength anymore since we're not garbage collecting on countries with border garrisons)
+                            attackingCountry = defendingCountry; // set the country we just conquered as the new attacking country
+                        } else { // we ran out of armies before conquering the country
+                            extraArmies = 0; // so we have zero armies left, and we're done
+                        }
                     }
                 }
             }
@@ -828,6 +843,16 @@ public class Viking implements LuxAgent
         }
         objective.put("cost", cost);
         
+        // old cost with no borders (for testing)
+        float oldCost = 0;
+        for (int country : pathAndArea) {
+            oldCost += countries[country].getArmies();
+        }
+        oldCost *= 1.1f;
+        oldCost += pathAndArea.length;
+        int oldCostInt = (int) Math.ceil(oldCost);
+        objective.put("oldCost",oldCostInt);
+        
         // calculate and set score (legacy)
         float turns = Math.max(1, (float) cost / ((float) board.getPlayerIncome(ID) + .00001f));
         float score = 10f * (float) bonus / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5));
@@ -848,7 +873,7 @@ public class Viking implements LuxAgent
         String scoreStr = "" + score;
         summary += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
         summary += " - " + Arrays.toString(getContinentNames(continents)) + ", ";
-        summary += "bonus: " + bonus + ", cost: " + cost;
+        summary += "bonus: " + bonus + ", cost: " + cost;// + ", oldCost: " + oldCostInt;
         objective.put("summary", summary);
         
         return objective;
@@ -1023,6 +1048,24 @@ public class Viking implements LuxAgent
         }
     }
     
+    // operates on the global HashMap <borderArmies>, which contains the border garrison strength calculated
+    // for all the border countries of all the areas we've decided to take over;
+    // this function resets those values to equal the number of armies actually on each country in the hashmap
+    // (or removes the country from the hashmap if we no longer own it);
+    // we do this at the beginning of each turn; see placeArmies() where the function is called for why
+    protected void resetBorderArmies() {
+        Iterator iter = borderArmies.keySet().iterator();
+        while (iter.hasNext()) { // iterate through the hashmap
+            int key = (Integer) iter.next();
+            Country country = countries[key];
+            if (country.getOwner() == ID) { // if we own this country
+                borderArmies.put(key, country.getArmies() - 1); // set the value to the number of armies on that country (minus 1)
+            } else { // otherwise we don't own this country
+                iter.remove(); // so remove this entry from the hashmap altogether
+            }
+        }
+    }
+    
     // checks if country is in borderArmies hashmap, and if it is, returns the value, if not, returns 0
     // i.e. if the country is a border, this function will return the number of armies we intend to put/leave on it as a garrison
     protected int checkBorderStrength(int country) {
@@ -1032,13 +1075,14 @@ public class Viking implements LuxAgent
         return 0;
     }
 
-    // called by placeArmies(), figures out how many armies to put on each border country of the given area
+    // figures out how many armies to put on each border country of the given area
     // stores the number of armies it calculates for each country in the global hashmap borderArmies
     // does NOT actually place those armies on the countries
     protected void setBorderStrength(int[] area) {
-        int numBorders = getAreaBorders(area).length; // the number of borders <area> has
+        int[] borders = getAreaBorders(area);
+        int numBorders = borders.length; // the number of borders <area> has
         int areaBonus = getAreaBonuses(area); // any continent bonuses contained within <area>
-        for (int country : area) {
+        for (int country : borders) {
             int strength = calculateBorderStrength(country, area, numBorders, areaBonus);
             borderArmies.put(country, strength); // borderArmies is a global hashmap
         }
@@ -1598,11 +1642,11 @@ public class Viking implements LuxAgent
         return getCheapestRouteToArea(area, into, ID);
     }
     
-    // called in the placeArmies() and placeInitialArmies() phases
+    // called in the placeArmies() phase
     // given that the bot has already chosen an area to pursue, this function should find a comprehensive plan
     // to takeover that continent/area in the form of a set of int[] arrays of country codes that form attack paths from countries we own
     // this function calls getAreaTakeoverPaths() to get a list of all possible takeover paths (allPaths) through a given country list (area)
-    // then finds a comprehensive set of paths that pass through every enemy country in the area, including forks and islands
+    // then from those finds a comprehensive set of paths that pass through every enemy country in the area, including forks and islands
     // ideally, it will find as few as possible that contain every enemy country in the area (as well as every country we own, even if that means a dummy path of only 1 country)
     // getAreaTakeoverPaths() adds 1-element-long single-country paths for each country we own in the area, and this function will pick all of those whose country isn't in one of the other paths it picks
     // this is useful in the place armies phase, because those paths are used to arm the border countries
