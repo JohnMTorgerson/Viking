@@ -146,19 +146,19 @@ public class Viking implements LuxAgent
                  "\n**************** PLACE ARMIES ****************" +
                  "\n**********************************************" +
                  "\n**********************************************" +
-                 "\n Our income: " + board.getPlayerIncome(ID) + " - Total enemy income: " + getTotalEnemyIncome());
+                 "\n Turn: " + board.getTurnCount() + " - Our income: " + board.getPlayerIncome(ID) + " - Total enemy income: " + getTotalEnemyIncome());
         
         // the <initial> boolean is a flag that tells us if this function
         // was called from placeInitialArmies(); we want to clear <battlePlan>
         // every turn, but we don't want to clear it in between placeInitialArmies()
-        // calls at the beginning of the game;
+        // calls at the beginning of the game (or before the first turn);
         // <battlePlan> is emptied each turn one path at a time in attackPhase(),
         // so normally it will already be empty here; however, we have to clear it anyway
         // for the special case that placeArmies() was called in the middle of a turn,
         // which happens when we wipeout an enemy and get to cash cards mid-turn;
         // in that case, we want to create a new <battlePlan> from scratch, erasing the old one
         // that attackPhase() is in the middle of, and letting it do the new one instead
-        if (initial == false) {
+        if (initial == false && board.getTurnCount() > 1) {
             battlePlan.clear();
         }
         
@@ -499,13 +499,15 @@ public class Viking implements LuxAgent
         //     (but NOT toward any interior borders, i.e. borders that are boxed in by other areas we own)
         //     then if any exterior borders are touching each other, do some proportionalization between them
         //     -- idea: for armies outside the area, we might not want to move them to a border if the border
-        //              is already secure; it would make more sense to deal with those armies in phase 2?
+        //              is already secure; it would make more sense to move those armies out to the front in phase 2?
         // (2) we move any unused armies that do not have a path to exterior area borders
         //     toward the nearest country that neighbors an enemy country
         
         // -- PHASE 1 --
         
-        // first, we get a list of all borders of areas we (fully) own
+        // recalculate the border strengths of all the countries in <borderArmies>?
+        
+        // get a list of all borders of areas we (fully) own
         // that are not boxed in by other areas we (fully) own;
         // this is be the list of countries we will fortify to
         int[] exteriorBorders = findAllExteriorBorders();
