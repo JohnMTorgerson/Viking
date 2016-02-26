@@ -38,11 +38,19 @@ public class Viking implements LuxAgent
     // value: number of armies
     protected Map<Integer, Integer> borderArmies;
     
+    // will contain int[] arrays of country codes, called "areas"
+    // each area is based on a continent of the map, but may contain
+    // extra countries outside of that continent to reduce the number of
+    // borders to defend; therefore, some countries will be in
+    // more than one area (but no area should have duplicates of any country)
+    protected ArrayList<int[]> smartAreas;
+    
     public Viking()
     {
         rand = new Random();
         battlePlan = new ArrayList<int[]>();
         borderArmies = new HashMap<Integer, Integer>();
+        smartAreas = new ArrayList<int[]>();
     }
     
     // Save references
@@ -53,6 +61,7 @@ public class Viking implements LuxAgent
         board = theboard;
         countries = board.getCountries();
         numConts = board.getNumberOfContinents();
+        smartAreas = calculateSmartAreas();
 
     }
     
@@ -77,6 +86,7 @@ public class Viking implements LuxAgent
             "placeArmies",
             "attackPhase",
 //            "moveArmiesIn",
+            "fortifyPhase",
             
 //            "continentFitness",
 //            "getAreaTakeoverPaths",
@@ -105,8 +115,7 @@ public class Viking implements LuxAgent
     }
     
     // pick initial countries at the beginning of the game. We will do this later.
-    public int pickCountry()
-    {
+    public int pickCountry() {
         return -1;
     }
     
@@ -482,8 +491,41 @@ public class Viking implements LuxAgent
         return amountToMove;
     }
     
-    public void fortifyPhase()
-    {
+    public void fortifyPhase() {
+        testChat("fortifyPhase", "*********** FORTIFY PHASE ***********");
+        
+        // we will fortify in 2 phases:
+        // (1) we move any unused armies that have a path to exterior area borders toward those borders
+        //     (but NOT toward any interior borders, i.e. borders that are boxed in by other areas we own)
+        //     then if any exterior borders are touching each other, do some proportionalization between them
+        //     -- idea: for armies outside the area, we might not want to move them to a border if the border
+        //              is already secure; it would make more sense to deal with those armies in phase 2?
+        // (2) we move any unused armies that do not have a path to exterior area borders
+        //     toward the nearest country that neighbors an enemy country
+        
+        // -- PHASE 1 --
+        
+        // first, we get a list of all borders of areas we (fully) own
+        // that are not boxed in by other areas we (fully) own;
+        // this is be the list of countries we will fortify to
+        int[] exteriorBorders = findAllExteriorBorders();
+        testChat("fortifyPhase", "All exterior borders:");
+        chatCountryNames("fortifyPhase", exteriorBorders);
+        
+        // then find list of all countries with unused armies (that we want to move to an exterior border)
+        
+        // loop through, find shortest path from each country to an exterior border and move there
+        // using need as a tie-breaker
+        
+        // finally, find out if any group of exterior borders touch each other
+        // and do any necessary moving between them to even things out in proportion to need
+        
+        // -- PHASE 2 --
+        
+        // find list of all countries with unused armies that we don't want to move to an exterior border
+        
+        // find shortest path to a country that touches an enemy and move there
+        // (what should we use as a tie-breaker here?)
     }
     
     // called when we win the game
@@ -506,6 +548,83 @@ public class Viking implements LuxAgent
     /*
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
+    
+    // returns an array of all borders of all areas (that we fully own) that are not blocked in by another area we own
+    protected int[] findAllExteriorBorders() {
+        // get list of all borders
+        ArrayList<Integer> candidates = new ArrayList<Integer>(borderArmies.keySet());
+        
+        // loop through all borders and eliminate borders that are blocked in by an area that we completely own
+        Iterator<Integer> iter = candidates.iterator();
+        while (iter.hasNext()) {
+            int border = iter.next(); // the border country we're checking
+            
+            // first check if the border itself is part of an area that we fully own;
+            // if it's not, it doesn't count, so remove it
+            boolean validBorder = false;
+            for (int[] area : smartAreas) { // loop through all areas on the board
+                if (isInArray(border, area) && playerOwnsArea(area)) { // if the border is in this area and we fully own this area
+                    validBorder = true; // then the border is valid
+                    break; // and we don't need to check the rest of the areas
+                }
+            }
+            
+            // if the <validBorder> flag is true, then go ahead and check to see if it's exterior or not
+            if (validBorder) {
+                int[] neighbors = countries[border].getAdjoiningCodeList(); // get this border's neighbors
+                boolean exteriorBorder = false;
+                for (int neighbor : neighbors) { // loop through all the neighbors
+                    boolean externalNeighbor = true; // flag for whether this neighbor is part of at least one area that we completely own
+                    for (int[] area : smartAreas) { // loop through all areas (<smartAreas> is a global list of all the areas on the board)
+                        if (isInArray(neighbor, area) && playerOwnsArea(area)) { // if this neighbor is in this area and we fully own this area
+                            // if we're here, we know this neighbor is part of at least one area that we completely own
+                            externalNeighbor = false; // so set the flag to false
+                            break; // and we don't need to loop through the rest of the areas
+                        }
+                    }
+                    // if the <externalNeighbor> flag is true, then this neighbor is not part of any areas that we completely own
+                    // so we know that this border is an exterior border and we don't want to remove it
+                    if (externalNeighbor) {
+                        exteriorBorder = true; // set <exteriorBorder> flag to true
+                        break; // we don't need to check the rest of its neighbors
+                    }
+                }
+                // if <exteriorBorder> flag is false after checking all the neighbors of this border
+                // then it must be an internal neighbor, so remove it from the list
+                if (exteriorBorder == false) {
+                    iter.remove();
+                }
+            } else {
+                // if we're here, this is not a valid border, so remove it
+                iter.remove();
+            }
+        }
+        
+        // now the candidates list should only contain exterior borders
+        // so convert it to an int[] array and return it
+        return convertListToIntArray(candidates);
+    }
+    
+    // find the areas with smart borders that we'll use for the whole game;
+    // each area is based on a continent of the map, but may contain
+    // extra countries outside of that continent to reduce the number of
+    // borders to defend; therefore, some countries will be in
+    // more than one area (but no area should have duplicates of any country)
+    protected ArrayList<int[]> calculateSmartAreas() {
+        ArrayList<int[]> areas = new ArrayList<int[]>();
+        
+        // loop through all the continents to create an "objective" hashmap for each one and add it to objectiveList
+        for(int continent = 0; continent < numConts; continent++) {
+            // get countries in this continent
+            // plus possibly some extra countries outside the continent in order to
+            // reduce the number of borders necessary to defend
+            int[] area = getSmartBordersArea(getCountriesInContinent(continent));
+            
+            // add objective to objectiveList arraylist
+            areas.add(area);
+        }
+        return areas;
+    }
     
     // returns a list of wipeout objectives, one for each player remaining in the game that isn't us
     // a wipeout objective is a list of attack paths to eliminate a player from the game entirely
@@ -770,14 +889,10 @@ public class Viking implements LuxAgent
     protected ArrayList<HashMap> findTakeoverObjectives() {
         ArrayList<HashMap> objectiveList = new ArrayList<HashMap>();
         
-        // loop through all the continents to create an "objective" hashmap for each one and add it to objectiveList
-        for(int continent = 0; continent < numConts; continent++) {
-            // get countries in this continent
-            // plus possibly some extra countries outside the continent in order to
-            // reduce the number of borders necessary to defend
-            int[] area = getSmartBordersArea(getCountriesInContinent(continent));
+        // loop through all the areas to create an "objective" hashmap for each one and add it to objectiveList
+        for (int[] area : smartAreas) {
             
-            // create takeover objective of this continent
+            // create takeover objective of this area
             HashMap<String, Object> objective = calculateTakeoverObjective(area);
             
             // add objective to objectiveList arraylist
@@ -1106,7 +1221,8 @@ public class Viking implements LuxAgent
             // find any armies we may already have on this country
             // and decide the maximum number of armies we want to add to that each turn (as a portion of our income)
             // (up to the ideal value, which we'll calculate later)
-            double incomePortion = (double) board.getPlayerIncome(ID) / 4.0d; // our income divided by
+            double income = (double) board.getPlayerIncome(ID);
+            double incomePortion = income / 4.0d; // our income divided by 4
             int extantArmies = 0; // the number of (our) armies on this country, if any
             if (countries[country].getOwner() == ID) { // if we (actually) own the country
                 extantArmies = countries[country].getArmies(); // get the extant armies
@@ -1124,7 +1240,7 @@ public class Viking implements LuxAgent
             // so we never have to add more than that much of our income at once
             // in order to keep the border garrison requirements from being out of control
             // but the garrison will be allowed to grow each turn until it reaches the ideal value
-            strength = (int) Math.ceil(Math.min(greatestThreat * areaValue, extantArmies + incomePortion));
+            strength = (int) Math.ceil(Math.min(greatestThreat * areaValue,  (double) income / 2));//extantArmies + incomePortion)); <-- commenting out the incremental limit for now because it doesn't work very well; we'll come back to it
             
             testChat("calculateBorderStrength", "Border strength of " + countries[country].getName() + " is " + strength);
         }
@@ -2314,6 +2430,20 @@ public class Viking implements LuxAgent
     // overloaded version; if no owner ID is provided, assume it is us
     protected int[] getEnemyCountriesInArea(int[] area) {
         return getEnemyCountriesInArea(area, ID);
+    }
+    
+    // returns true if <player> owns every country in <area>
+    protected boolean playerOwnsArea(int[] area, int player) {
+        for (int country : area) {
+            if (getProjectedCountryOwner(country) != player) {
+                return false;
+            }
+        }
+        return true;
+    }
+    // overloaded single-parameter version assumes "player" is us
+    protected boolean playerOwnsArea(int[] area) {
+        return playerOwnsArea(area, ID);
     }
     
     // helper function to return the summary magnitude of all continent bonuses completely contained within <area>
