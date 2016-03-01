@@ -33,10 +33,13 @@ public class Viking implements LuxAgent
     // so that moveArmiesIn() will know how many armies to leave behind
     protected int leaveArmies;
     
-    // will store the number of armies we want to put on a border country
+    // <borderArmies> will store the number of armies we want to put on a border country
+    // <idealBorderArmies> will store the ideal number of armies a border country needs
     // key: country code
     // value: number of armies
     protected Map<Integer, Integer> borderArmies;
+    protected Map<Integer, Integer> idealBorderArmies;
+
     
     // will contain int[] arrays of country codes, called "areas"
     // each area is based on a continent of the map, but may contain
@@ -50,6 +53,7 @@ public class Viking implements LuxAgent
         rand = new Random();
         battlePlan = new ArrayList<int[]>();
         borderArmies = new HashMap<Integer, Integer>();
+        idealBorderArmies = new HashMap<Integer, Integer>();
         smartAreas = new ArrayList<int[]>();
     }
     
@@ -96,7 +100,7 @@ public class Viking implements LuxAgent
 //            "placeArmiesOnRoutes",
 //            "calculateCladeCost",
 //            "calculateBorderStrength",
-//            "findGreatestThreat",
+//            "calculateIdealBorderStrength",
 //            "getAreaBonuses",
 //            "calculateLandgrabObjective",
 //            "findWeakestNeighborOwnedByStrongestEnemy",
@@ -173,7 +177,9 @@ public class Viking implements LuxAgent
         // if a takeover objective IS picked this turn that uses any of these countries as a border, it will simply overwrite
         // that value in the hashmap with whatever it wants to put there as a border;
         // the values we're setting here only matter if we don't pick that objective this turn;
-        resetBorderArmies();
+        if (initial == false && board.getTurnCount() > 1) {
+            resetBorderArmies();
+        }
         
         // this array list will hold all of the possible objectives we can pursue this turn
         ArrayList<HashMap> objectiveList = new ArrayList<HashMap>();
@@ -348,6 +354,9 @@ public class Viking implements LuxAgent
             testChat("placeArmies","Viking: We've ended placement, but we still have armies......what a bozo.");
             testChat("placeArmies","        number of armies: " + numberOfArmies + ", objectives left: " + objectiveList.size());
         }
+        
+        testChat("placeArmies","--- BATTLE PLAN: ---");
+        chatCountryNames("placeArmies",battlePlan);
     }
     public void placeArmies(int numberOfArmies) {
         placeArmies(numberOfArmies, false);
@@ -503,31 +512,55 @@ public class Viking implements LuxAgent
         // (2) we move any unused armies that do not have a path to exterior area borders
         //     toward the nearest country that neighbors an enemy country
         
-        // -- PHASE 1 --
-        
         // recalculate the border strengths of all the countries in <borderArmies>?
         
-        // get a list of all borders of areas we (fully) own
-        // that are not boxed in by other areas we (fully) own;
+        // find and store all the ideal border strengths of each exterior border
+        // an exterior border is a border of an area we (fully) own
+        // that is not boxed in by other areas we (fully) own;
         // this is be the list of countries we will fortify to
-        int[] exteriorBorders = findAllExteriorBorders();
-        testChat("fortifyPhase", "All exterior borders:");
-        chatCountryNames("fortifyPhase", exteriorBorders);
-        
-        // then find list of all countries with unused armies (that we want to move to an exterior border)
-        
-        // loop through, find shortest path from each country to an exterior border and move there
-        // using need as a tie-breaker
+        HashMap<Integer,Double> extBordersFitness = findAllExteriorBordersFitness();
+        testChat("fortifyPhase", "Exterior borders and their fitness:");
+        String message = "\n";
+        for(int key : extBordersFitness.keySet()) {
+            message += getCountryName(key) + ": " + extBordersFitness.get(key) + "\n";
+        }
+        testChat("fortifyPhase", message);
+
+        // then loop through all the countries we own
+        // and free move any free armies we find
+        testChat("fortifyPhase", "Countries we can move from: ");
+        CountryIterator ourCountries = new PlayerIterator(ID, countries);
+        while (ourCountries.hasNext()) {
+            int country = ourCountries.next().getCode();
+            
+            // see if this country has any free armies
+            int freeArmies = countries[country].getArmies() - 1 - checkIdealBorderStrength(country);
+            
+            // if this country has free armies and is not itself an exterior border
+            // then we want to free move armies from this country to somewhere
+            if (freeArmies > 0 && !extBordersFitness.containsKey(country)) {
+                testChat("fortifyPhase", getCountryName(country));
+                
+                // there are two possible places we might want to send this country's free armies;
+                // the first is one of the exterior border countries, and the second is the nearest
+                // country that touches an enemy country; we'll calculate a score for each possible
+                // destination out of those possibilities and send the armies to the country
+                // with the highest score
+                
+                // first, we'll find the nearest country that touches an enemy country
+                
+                // score that country by 1 / distance
+                //loop through all exterior borders
+                //score by borderFitness/distance
+                //go to highest score
+            
+            }
+            
+            
+        }
         
         // finally, find out if any group of exterior borders touch each other
         // and do any necessary moving between them to even things out in proportion to need
-        
-        // -- PHASE 2 --
-        
-        // find list of all countries with unused armies that we don't want to move to an exterior border
-        
-        // find shortest path to a country that touches an enemy and move there
-        // (what should we use as a tie-breaker here?)
     }
     
     // called when we win the game
@@ -551,8 +584,12 @@ public class Viking implements LuxAgent
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
     
-    // returns an array of all borders of all areas (that we fully own) that are not blocked in by another area we own
-    protected int[] findAllExteriorBorders() {
+    // returns a hashmap of all borders of all areas (that we fully own) that are not blocked in by another area we own
+    // together with their 'fitness', which is simply their ideal strength divided by the number of armies actually on them
+    protected HashMap<Integer,Double> findAllExteriorBordersFitness() {
+        // the hashmap where we'll store the country codes and fitnesses of all the exterior borders
+        HashMap<Integer,Double> extBordersFitness = new HashMap<Integer,Double>();
+        
         // get list of all borders
         ArrayList<Integer> candidates = new ArrayList<Integer>(borderArmies.keySet());
         
@@ -562,11 +599,13 @@ public class Viking implements LuxAgent
             int border = iter.next(); // the border country we're checking
             
             // first check if the border itself is part of an area that we fully own;
-            // if it's not, it doesn't count, so remove it
             boolean validBorder = false;
-            for (int[] area : smartAreas) { // loop through all areas on the board
+            int areaIndex = -1;
+            for (int i=0; i<smartAreas.size(); i++) { // loop through all areas on the board
+                int[] area = smartAreas.get(i);
                 if (isInArray(border, area) && playerOwnsArea(area)) { // if the border is in this area and we fully own this area
                     validBorder = true; // then the border is valid
+                    areaIndex = i; // save the area that this is part of (we'll need this later to calculate its ideal strength)
                     break; // and we don't need to check the rest of the areas
                 }
             }
@@ -591,20 +630,24 @@ public class Viking implements LuxAgent
                         break; // we don't need to check the rest of its neighbors
                     }
                 }
-                // if <exteriorBorder> flag is false after checking all the neighbors of this border
-                // then it must be an internal neighbor, so remove it from the list
-                if (exteriorBorder == false) {
-                    iter.remove();
+                // if this is an exterior border
+                // then find its fitness (ideal strength / actual armies)
+                // and add it to the hashmap
+                if (exteriorBorder == true) {
+                    
+                    int ideal = calculateIdealBorderStrength(border, smartAreas.get(areaIndex));
+                    int actual = countries[border].getArmies();
+                    double fitness = ((double) ideal + 1d) / (double) actual;
+
+                    // save the border and its fitness in the hashmap
+                    extBordersFitness.put(border, fitness);
                 }
-            } else {
-                // if we're here, this is not a valid border, so remove it
-                iter.remove();
             }
         }
         
         // now the candidates list should only contain exterior borders
         // so convert it to an int[] array and return it
-        return convertListToIntArray(candidates);
+        return extBordersFitness;
     }
     
     // find the areas with smart borders that we'll use for the whole game;
@@ -954,7 +997,7 @@ public class Viking implements LuxAgent
         int[] pathAndArea = convertListToIntArray(pathAndAreaList); // convert the arraylist into an array for use in getGlobCost(); pathAndArea now holds all the enemy countries in the area we're taking over, plus any enemy countries we have to take over to get there
         cost = getGlobCost(pathAndArea); // estimate the cost of the area and the path together
         for (int country : area) { // now loop through every country in the area to add border garrisons to the cost
-            int borderStrength = calculateBorderStrength(country, area, numBorders, bonus); // what the border garrison should be for this country; if it is not a border, this will be 0
+            int borderStrength = calculateBorderStrength(country, area, calculateIdealBorderStrength(country,area), bonus); // what the border garrison should be for this country; if it is not a border, this will be 0
             int extantBorderArmies = getProjectedCountryOwner(country) == ID ? getProjectedArmies(country) - 1 : 0; // how many (extra) armies are on this country if we own it; if we don't own it, 0
             cost += Math.max(0,borderStrength - extantBorderArmies); // add the border strength we want to the cost minus any armies we already have on that border (or 0 if there are more than enough armies already there)
         }
@@ -1169,7 +1212,9 @@ public class Viking implements LuxAgent
     // for all the border countries of all the areas we've decided to take over;
     // this function resets those values to equal the number of armies actually on each country in the hashmap
     // (or removes the country from the hashmap if we no longer own it);
-    // we do this at the beginning of each turn; see placeArmies() where the function is called for why
+    // we do this at the beginning of each turn; see placeArmies() where the function is called for why;
+    // also removes any countries from <idealBorderArmies> that we no longer own, but does not adjust the values
+    // of the ones we still do own
     protected void resetBorderArmies() {
         Iterator iter = borderArmies.keySet().iterator();
         while (iter.hasNext()) { // iterate through the hashmap
@@ -1179,6 +1224,14 @@ public class Viking implements LuxAgent
                 borderArmies.put(key, country.getArmies() - 1); // set the value to the number of armies on that country (minus 1)
             } else { // otherwise we don't own this country
                 iter.remove(); // so remove this entry from the hashmap altogether
+            }
+        }
+        Iterator iter1 = idealBorderArmies.keySet().iterator();
+        while (iter1.hasNext()) { // iterate through the hashmap
+            int key = (Integer) iter1.next();
+            Country country = countries[key];
+            if (country.getOwner() != ID) { // if we don't own this country
+                iter1.remove(); // remove this entry from the hashmap altogether
             }
         }
     }
@@ -1191,6 +1244,15 @@ public class Viking implements LuxAgent
         }
         return 0;
     }
+    
+    // checks if country is in idealBorderArmies hashmap, and if it is, returns the value, if not, returns 0
+    // i.e. if the country is a border, this function will return the number of armies that would make up a garrison of ideal strength
+    protected int checkIdealBorderStrength(int country) {
+        if (idealBorderArmies.get(country) != null) {
+            return idealBorderArmies.get(country);
+        }
+        return 0;
+    }
 
     // figures out how many armies to put on each border country of the given area
     // stores the number of armies it calculates for each country in the global hashmap borderArmies
@@ -1200,20 +1262,18 @@ public class Viking implements LuxAgent
         int numBorders = borders.length; // the number of borders <area> has
         int areaBonus = getAreaBonuses(area); // any continent bonuses contained within <area>
         for (int country : borders) {
-            int strength = calculateBorderStrength(country, area, numBorders, areaBonus);
+            int idealStrength = calculateIdealBorderStrength(country, area);
+            int strength = calculateBorderStrength(country, area, idealStrength, areaBonus);
             borderArmies.put(country, strength); // borderArmies is a global hashmap
+            idealBorderArmies.put(country, idealStrength); // idealBorderArmies is a global hashmap
         }
     }
     
     // calculate how many armies to leave on the given country as a border garrison
     // if the country is not a border, will return 0;
-    protected int calculateBorderStrength(int country, int[] area, int numBorders, int areaBonus) {
+    protected int calculateBorderStrength(int country, int[] area, int idealStrength, int areaBonus) {
         int strength = 0;
         if (isAreaBorder(country, area)) { // if <country> is a border of <area>
-            
-            // find the greatest nearby threat to this border
-            // this is the highest value of (extant armies + player income) among all nearby countries
-            int greatestThreat = findGreatestThreat(country, area);
             
             // find the relative value of this area compared to the highest continent bonus on this map
             // which we'll use to tailor the garrison strength for this country to the area's "importance" as it were
@@ -1235,14 +1295,14 @@ public class Viking implements LuxAgent
             extantArmies = (int) Math.ceil(Math.max(extantArmies, incomePortion));
             
             // so now we're ready to calculate the strength;
-            // sets <strength> to the biggest nearby threat, scaled down by the relative value of the bonus we're protecting
+            // sets <strength> to the ideal strength, scaled down by the relative value of the bonus we're protecting
             // for a small bonus it will have an insufficient border,
-            // and the largest bonus on the board will have a bonus equal to <greatestThreat>
+            // and the largest bonus on the board will have a bonus equal to <idealStrength>
             // except if <extantArmies> + <incomePortion> is smaller than that number, in which case we limit <strength> to that
             // so we never have to add more than that much of our income at once
             // in order to keep the border garrison requirements from being out of control
             // but the garrison will be allowed to grow each turn until it reaches the ideal value
-            strength = (int) Math.ceil(Math.min(greatestThreat * areaValue,  (double) income / 2));//extantArmies + incomePortion)); <-- commenting out the incremental limit for now because it doesn't work very well; we'll come back to it
+            strength = (int) Math.ceil(Math.min(idealStrength * areaValue,  (double) income / 2));//extantArmies + incomePortion)); <-- commenting out the incremental limit for now because it doesn't work very well; we'll come back to it
             
             testChat("calculateBorderStrength", "Border strength of " + countries[country].getName() + " is " + strength);
         }
@@ -1250,14 +1310,16 @@ public class Viking implements LuxAgent
         return strength;
     }
     // overloaded version without the <bonuses> parameter
-    protected int calculateBorderStrength(int country, int[] area, int numBorders) {
+    protected int calculateBorderStrength(int country, int[] area, int idealStrength) {
         int areaBonus = getAreaBonuses(area); // set this to the bonus of all continents completely contained by <area>
-        return calculateBorderStrength(country, area, numBorders, areaBonus);
+        return calculateBorderStrength(country, area, idealStrength, areaBonus);
     }
     
     // called by calculateBorderStrength()
-    // returns the magnitude of the greatest nearby enemy threat to the given border country
-    protected int findGreatestThreat(int borderCountry, int[] area) {
+    // returns the ideal strength for this border, which is
+    // the magnitude of the greatest nearby enemy threat to the given border country
+    // plus a certain amount of padding
+    protected int calculateIdealBorderStrength(int borderCountry, int[] area) {
         int maxDepth = 5; // the depth we want to search out to
         int currentDepth = 0; // begin with a depth of 0
         int armiesThusFar = 0; // the armies on a given path so far
@@ -1267,10 +1329,13 @@ public class Viking implements LuxAgent
         // recursively find the greatest threat from all neighbors of <borderCountry> out to <currentDepth>
         int greatestThreat = findNeighborsThreat(borderCountry, area, currentDepth, maxDepth, armiesThusFar, blacklist);
         
-        return greatestThreat;
+        // multiply the greatest threat by 1.2, because this should give us decent odds of repelling an attack
+        int idealStrength = (int) Math.round(greatestThreat * 1.2d);
+        
+        return idealStrength;
     }
     
-    // called by findGreatestThreat()
+    // called by calculateIdealBorderStrength()
     // recursively finds neighbors of given country, and finds the threat level of those neighbors,
     // then compares all the threats it finds to each other and returns the highest one
     protected int findNeighborsThreat(int country, int[] area, int currentDepth, int maxDepth, int armiesThusFar, ArrayList<Integer> oldBlacklist) {
