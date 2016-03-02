@@ -539,7 +539,7 @@ public class Viking implements LuxAgent
             // if this country has free armies and is not itself an exterior border
             // then we want to free move armies from this country to somewhere
             if (freeArmies > 0 && !extBordersFitness.containsKey(country)) {
-                testChat("fortifyPhase", getCountryName(country));
+                message = getCountryName(country) + " - ";
                 
                 // there are two possible places we might want to send this country's free armies;
                 // the first is one of the exterior border countries, and the second is the nearest
@@ -548,12 +548,15 @@ public class Viking implements LuxAgent
                 // with the highest score
                 
                 // first, we'll find the nearest country that touches an enemy country
+                int[] pathTowardEnemy = pathToNearestCountryWithEnemyNeighbor(country);
+                message += "path toward enemy: " + Arrays.toString(getCountryNames(pathTowardEnemy));
                 
                 // score that country by 1 / distance
                 //loop through all exterior borders
                 //score by borderFitness/distance
                 //go to highest score
             
+                testChat("fortifyPhase",message);
             }
             
             
@@ -584,6 +587,67 @@ public class Viking implements LuxAgent
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
     
+    // given a country <startCountry>, find and return a path (int[]) to the nearest country
+    // that has a neighbor which is not owned by the owner of <startCountry>;
+    // if <startCountry> itself has an enemy neighbor, will just return a path of length 1 containing only <startCountry>
+    protected int[] pathToNearestCountryWithEnemyNeighbor(int startCountry) {
+        // the owner of the starting country
+        int owner = countries[startCountry].getOwner();
+        
+        // we'll store whether we've seen a country before in a boolean array
+        // so we don't double count it
+        boolean[] alreadySeen = new boolean[countries.length];
+        for (int i=0; i<countries.length; i++) {
+            alreadySeen[i] = false;
+        }
+        
+        // create a self-sorting stack <Q>, in which we'll store each path we create as we go along;
+        // we'll loop around, on each loop picking the shortest path in the stack and finding the neighbors
+        // of the last country in it, and adding them each to the end of their own new path,
+        // which we'll add to the stack until we find one that's an enemy,
+        // in which case we'll return the path leading up to it and we're done
+        CountryPathStack Q = new CountryPathStack();
+        int country = startCountry;
+        int[] path = new int[1];
+        path[0] = country;
+        while (true) {
+            // store this country as seen
+            alreadySeen[country] = true;
+
+            // get this country's neighbors and loop through them;
+            // we'll test if any of them are an enemy country, and if they are, we're done;
+            // if not, we'll add them each to the end of their own new path
+            // and add all those paths to the stack
+            int[] neighbors = countries[country].getAdjoiningCodeList();
+            for (int neighbor : neighbors) {
+                if (alreadySeen[neighbor] == false) { // if we haven't already seen this country
+                    // if this neighbor is an enemy, then <country> is the last country in the path, so we're done
+                    if (countries[neighbor].getOwner() != owner) {
+                        return path;
+                    }
+                    
+                    // otherwise, we need to keep searching
+                    // so create a new path with this neighbor at the end of it
+                    // and push it onto the stack
+                    int[] newPath = new int[path.length+1];
+                    System.arraycopy(path,0,newPath,0,path.length);
+                    newPath[newPath.length-1] = neighbor;
+                    Q.pushWithValueAndHistory(countries[neighbor], newPath.length, newPath);
+                }
+            }
+            
+            // if the Q is empty, we couldn't find any enemy neighbors at all
+            if (Q.isEmpty()) {
+                System.out.println("ERROR in pathToNearestCountryWithEnemyNeighbor(): can't find any enemy neighbors");
+                return null;
+            }
+            
+            // pop the shortest path and its last country off of the stack for the next loop
+            path = Q.topHistory();
+            country = Q.pop();
+        }
+    }
+
     // returns a hashmap of all borders of all areas (that we fully own) that are not blocked in by another area we own
     // together with their 'fitness', which is simply their ideal strength divided by the number of armies actually on them
     protected HashMap<Integer,Double> findAllExteriorBordersFitness() {
