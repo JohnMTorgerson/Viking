@@ -503,31 +503,31 @@ public class Viking implements LuxAgent
     public void fortifyPhase() {
         testChat("fortifyPhase", "*********** FORTIFY PHASE ***********");
         
+        // first recalculate the border strengths of all the countries in <borderArmies>?
+        
         // we will fortify in 2 phases:
-        // (1) we move any unused armies that have a path to exterior area borders toward those borders
+        //
+        // (1) if any exterior borders are touching each other, do some proportionalization between them
+        //
+        // (2) we move any unused armies either toward an exterior area border
         //     (but NOT toward any interior borders, i.e. borders that are boxed in by other areas we own)
-        //     then if any exterior borders are touching each other, do some proportionalization between them
-        //     -- idea: for armies outside the area, we might not want to move them to a border if the border
-        //              is already secure; it would make more sense to move those armies out to the front in phase 2?
-        // (2) we move any unused armies that do not have a path to exterior area borders
-        //     toward the nearest country that neighbors an enemy country
+        //     or toward the nearest country that neighbors an enemy country,
+        //     whichever is better, as determined by distance vs. need
         
-        // recalculate the border strengths of all the countries in <borderArmies>?
-        
-        // find and store all the ideal border strengths of each exterior border
+        // so first find and store all the ideal border strengths of each exterior border;
         // an exterior border is a border of an area we (fully) own
         // that is not boxed in by other areas we (fully) own;
-        // this is be the list of countries we will fortify to
         HashMap<Integer,Double> extBordersFitness = findAllExteriorBordersFitness();
-        testChat("fortifyPhase", "Exterior borders and their fitness:");
-        String message = "\n";
-        for(int key : extBordersFitness.keySet()) {
-            message += getCountryName(key) + ": " + extBordersFitness.get(key) + "\n";
-        }
-        testChat("fortifyPhase", message);
+        
+        // PHASE 1
 
-        // then loop through all the countries we own
-        // and free move any free armies we find
+        // proportionalize between touching exterior borders
+        
+        // PHASE 2
+        
+        // now loop through all the countries we own
+        // and move any free armies we find (that aren't on an exterior border)
+        // either toward an exterior border or toward the closest country that neighbors an enemy
         testChat("fortifyPhase", "Countries we can move from: ");
         CountryIterator ourCountries = new PlayerIterator(ID, countries);
         while (ourCountries.hasNext()) {
@@ -539,7 +539,8 @@ public class Viking implements LuxAgent
             // if this country has free armies and is not itself an exterior border
             // then we want to free move armies from this country to somewhere
             if (freeArmies > 0 && !extBordersFitness.containsKey(country)) {
-                message = getCountryName(country) + " - ";
+                
+                testChat("fortifyPhase", "== possible paths to fortify from " + countries[country].getName() + " ==");
                 
                 // there are two possible places we might want to send this country's free armies;
                 // the first is one of the exterior border countries, and the second is the nearest
@@ -547,19 +548,68 @@ public class Viking implements LuxAgent
                 // destination out of those possibilities and send the armies to the country
                 // with the highest score
                 
-                // first, we'll find the nearest country that touches an enemy country
-                int[] pathTowardEnemy = pathToNearestCountryWithEnemyNeighbor(country);
-                message += "path toward enemy: " + Arrays.toString(getCountryNames(pathTowardEnemy));
+                double score = 0.0d;
+                double highestScore = 0.0d;
                 
-                // score that country by 1 / distance
-                //loop through all exterior borders
-                //score by borderFitness/distance
-                //go to highest score
-            
-                testChat("fortifyPhase",message);
+                // first, we'll find the nearest country that touches an enemy country
+                // and score that path appropriately ( 1 / path length^2 )
+                int[] pickedPath = pathToNearestCountryWithEnemyNeighbor(country);
+                if (pickedPath == null) { // if the function returned null
+                    // that means it didn't find any enemies anywhere on the board for some reason;
+                    // that should probably never happen, but if it does, we'll set <pickedPath>
+                    // to a single-element length array containing just <country>
+                    pickedPath = new int[]{country};
+                }
+                if (!extBordersFitness.containsKey(pickedPath[pickedPath.length-1])) {
+                    // score this path, as long as the destination country (last country in the path) isn't an exterior border
+                    // (if it is an exterior border, we'll leave the score at the default 0, so it will be ignored,
+                    // because in that case we'll already be considering that path when we look at all the exterior borders)
+                    highestScore = 1d / Math.pow((double) pickedPath.length, 2); // score is 1 / path length^2
+                }
+                
+                testChat("fortifyPhase",Arrays.toString(getCountryNames(pickedPath)) + " - " + highestScore + " - front lines");
+
+                // now loop through all exterior borders and find paths to them,
+                // scoring them by ( ideal strength / (actual strength * path length^2) )
+                // and pick the highest overall score
+                for (int border : extBordersFitness.keySet()) {
+                    // get a path to the next exterior border and calculate its score
+                    int[] candidatePath = BoardHelper.friendlyPathBetweenCountries(country, border, countries);
+                    if (candidatePath != null) {
+                        score = (double) extBordersFitness.get(border) / Math.pow((double) candidatePath.length, 2);
+                        
+                        testChat("fortifyPhase",Arrays.toString(getCountryNames(candidatePath)) + " - " + score);
+                        
+                        // if this path has the highest score, pick it
+                        if (score > highestScore) {
+                            pickedPath = candidatePath;
+                            highestScore = score;
+                        }
+                    }
+                }
+                
+                testChat("fortifyPhase", "Path we're picking: " + Arrays.toString(getCountryNames(pickedPath)));
+                
+                // fortify the armies along the path with the highest score
+                for (int i=0; i<pickedPath.length-1; i++) {
+                    int fromCountry = pickedPath[i];
+                    int toCountry = pickedPath[i+1];
+                    
+                    // figure out how many armies to move from this country:
+                    // excess armies (above ideal border strength) or moveable armies, whichever is smaller
+                    freeArmies = countries[fromCountry].getArmies() - 1 - checkIdealBorderStrength(fromCountry);
+                    int moveArmies = Math.min(freeArmies, countries[fromCountry].getMoveableArmies());
+                    
+                    // do the actual free move,
+                    // as long as the amount we can move is greater than 0 and we own both countries
+                    if (moveArmies > 0 && countries[fromCountry].getOwner() == ID && countries[toCountry].getOwner() == ID) {
+                        board.fortifyArmies(moveArmies, fromCountry, toCountry);
+                    } else {
+                        // otherwise we can't move anything anymore, so stop looping through the path
+                        break;
+                    }
+                }
             }
-            
-            
         }
         
         // finally, find out if any group of exterior borders touch each other
