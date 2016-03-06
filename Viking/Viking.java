@@ -48,6 +48,10 @@ public class Viking implements LuxAgent
     // more than one area (but no area should have duplicates of any country)
     protected ArrayList<int[]> smartAreas;
     
+    // used in findAreaPaths() when we find paths recursively by brute force
+    // to keep track of how many we've found so far
+    protected int pathCount;
+    
     public Viking()
     {
         rand = new Random();
@@ -66,6 +70,7 @@ public class Viking implements LuxAgent
         countries = board.getCountries();
         numConts = board.getNumberOfContinents();
         smartAreas = calculateSmartAreas();
+        pathCount = 0;
 
     }
     
@@ -351,12 +356,12 @@ public class Viking implements LuxAgent
             }
         }
         if (numberOfArmies > 0) {
-            testChat("placeArmies","Viking: We've ended placement, but we still have armies......what a bozo.");
+            testChat("placeArmies","Viking: We've ended placement, but we still have armies......what a schmuck.");
             testChat("placeArmies","        number of armies: " + numberOfArmies + ", objectives left: " + objectiveList.size());
         }
         
-        testChat("placeArmies","--- BATTLE PLAN: ---");
-        chatCountryNames("placeArmies",battlePlan);
+//        testChat("placeArmies","--- BATTLE PLAN: ---");
+//        chatCountryNames("placeArmies",battlePlan);
     }
     public void placeArmies(int numberOfArmies) {
         placeArmies(numberOfArmies, false);
@@ -514,14 +519,17 @@ public class Viking implements LuxAgent
         //     or toward the nearest country that neighbors an enemy country,
         //     whichever is better, as determined by distance vs. need
         
-        // so first find and store all the ideal border strengths of each exterior border;
+        // so first find and store the fitness of each exterior border;
         // an exterior border is a border of an area we (fully) own
         // that is not boxed in by other areas we (fully) own;
+        // the fitness value stored for each exterior border in the hashmap
+        // is its ideal strength / actual strength
         HashMap<Integer,Double> extBordersFitness = findAllExteriorBordersFitness();
         
         // PHASE 1
 
-        // proportionalize between touching exterior borders
+        // find out if any group of exterior borders touch each other
+        // and do any necessary moving between them to even things out in proportion to need
         
         // PHASE 2
         
@@ -611,9 +619,6 @@ public class Viking implements LuxAgent
                 }
             }
         }
-        
-        // finally, find out if any group of exterior borders touch each other
-        // and do any necessary moving between them to even things out in proportion to need
     }
     
     // called when we win the game
@@ -1700,6 +1705,10 @@ public class Viking implements LuxAgent
         
         // we'll store all candidate paths here (individual paths are integer arrays)
         ArrayList<int[]> paths = new ArrayList<int[]>();
+        
+        // a global variable we need in order to keep track of how many paths
+        // have been found so far
+        pathCount = 0;
 
         // we'll test every path from every country we own in the countryList
         // if we don't own any countries in countryList, we'll find a country close-by to start from
@@ -1710,7 +1719,7 @@ public class Viking implements LuxAgent
             
             // just testing to see if we found the countries we own
             String[] countryNames = getCountryNames(candidates);
-            testChat("getAreaTakeoverPaths", "countries we own in goalCont: " + Arrays.toString(countryNames));
+            testChat("getAreaTakeoverPaths", "countries we own in area: " + Arrays.toString(countryNames));
             
             // loop through candidates array, finding paths for each of them
             int[] initialPath = new int[1];
@@ -1720,7 +1729,7 @@ public class Viking implements LuxAgent
             }
         }
         else { // we don't own any countries in countryList
-            testChat("getAreaTakeoverPaths", "we don't own any countries in goalCont");
+            testChat("getAreaTakeoverPaths", "we don't own any countries in area");
             
             // find the cheapest path to it from some country we own
             // we pass 'false' as the second parameter to tell the function that we don't care
@@ -1728,19 +1737,29 @@ public class Viking implements LuxAgent
             // the cost of the path up until that point, since we're planning on taking over the whole area anyway
             int[] initialPath = getCheapestRouteToArea(countryList, false);
             
-            String[] countryNames = getCountryNames(initialPath);
-            testChat("getAreaTakeoverPaths", "Path to continent: " + Arrays.toString(countryNames));
-            
-            // use that as starting country
-            paths = findAreaPaths(initialPath, countryList);
+            if (initialPath != null) {
+                String[] countryNames = getCountryNames(initialPath);
+                testChat("getAreaTakeoverPaths", "Path to continent: " + Arrays.toString(countryNames));
+                
+                // use that as starting country
+                paths = findAreaPaths(initialPath, countryList);
+            } else {
+                // if we're here, we couldn't find a country we own that can reach countryList for some reason
+                // so all we can do is return empty-handed
+                System.out.println("ERROR in getAreaTakeoverPaths() - could not get initial path to area");
+                return paths;
+            }
         }
+        
+        testChat("getAreaTakeoverPaths", "pathCount: " + pathCount);
         
         // now we have a complete list of terminal paths from every country we own in the area (countryList)
         // (or from a nearby country in the case that we don't own any in the area itself)
         // but we still need to go over all of the countries we have paths to, and see if any are left out.
         // this will happen in the case of non-contigious areas, i.e. "you can't get there from here"
+        // or it may also happen if we hit the <pathCount> limit in findAreaPaths() before we got to everything;
         // so we'll check if any of the countries in countryList are not in any of the paths we found
-        // and repackage just them as a new area, call getAreaTakeoverPaths() recursively on that area
+        // and repackage just them as a new area, call getAreaTakeoverPaths() recursively on that area,
         // and add the results to the paths ArrayList
         ArrayList<Integer> countriesLeft = new ArrayList<Integer>(); // (note that countriesLeft is an ArrayList, which is atypical (usually integer arrays are used))
         for (int i=0; i<countryList.length; i++) { // create ArrayList of whole area
@@ -1763,7 +1782,8 @@ public class Viking implements LuxAgent
         }
         
         // now anything left in countriesLeft was not accounted for in any path we found
-        // (which should only happen if the original area we searched was not contiguous and we didn't own a country in at least one of the discrete parts)
+        // (which could happen if the original area we searched was not contiguous and we didn't own a country in at least one of the discrete parts,
+        // or if we had to stop when we hit the <pathCount> limit before we got to all the countries)
         // so convert it into an integer array and pass it into getAreaTakeoverPaths() recursively as a new area to search
         // then we'll add the results of that function call to the paths we already found
         if (countriesLeft.size() > 0) {
@@ -1772,17 +1792,21 @@ public class Viking implements LuxAgent
                 countriesLeftArray[i] = countriesLeft.get(i).intValue();
             }
             String[] countryNames = getCountryNames(countriesLeftArray);
-            testChat("getAreaTakeoverPaths", "countriesLeft: " + Arrays.toString(countryNames));
             
+            testChat("getAreaTakeoverPaths", "There are " + countriesLeftArray.length + " countries left");
+            //testChat("getAreaTakeoverPaths", "countriesLeft: " + Arrays.toString(countryNames));
+            
+            testChat("getAreaTakeoverPaths", "===========>> RECURSE on countriesLeft");
             paths.addAll(getAreaTakeoverPaths(countriesLeftArray));
-            
+            testChat("getAreaTakeoverPaths", "<<=========== END RECURSE");
+
         } else {
             testChat("getAreaTakeoverPaths", "all countries were accounted for in the list of paths we found");
         }
         
         // now we will add single-country paths for each country we own
         // these aren't terminal paths, of course; they're kind of dummy paths
-        // they will be added to the battlePlan, from which the border countries among them will be armed
+        // they will be added to the battlePlan, from which the border countries among them will be armed;
         // by treating the border countries as paths, we harness a lot of existing logic for placing armies
         for (int country : countryList) {
             if (getProjectedCountryOwner(country) == ID) {
@@ -1791,7 +1815,7 @@ public class Viking implements LuxAgent
         }
         
         testChat("getAreaTakeoverPaths", "There are " + paths.size() + " terminal paths");
-        chatCountryNames("getAreaTakeoverPaths", paths);
+        //chatCountryNames("getAreaTakeoverPaths", paths);
         
         // return the paths
         return paths;
@@ -1843,7 +1867,7 @@ public class Viking implements LuxAgent
         testChat("getCheapestRouteToArea", "getCheapestRouteToArea area: " + Arrays.toString(countryNames));
         
         if (owner < 0 || area.length == 0) {
-            System.out.println("ERROR in cheapestRouteFromOwnerToCont() -> bad parameters");
+            System.out.println("ERROR in getCheapestRouteToArea() -> bad parameters");
             return null;
         }
         
@@ -1927,11 +1951,10 @@ public class Viking implements LuxAgent
             // as far as we know, this should only happen in maps with one-way connections
             // if the only country owned by owner is trapped behind a one-way connection from the area
             if (Q.isEmpty()) {
-                System.out.println("ERROR in cheapestRouteFromOwnerToCont->can't pop");
+                System.out.println("ERROR in getCheapestRouteToArea - could not find a country owned by owner");
                 return null;
             }
         }
-        // End of cheapestRouteFromOwnerToCont
     }
     // overload getCheapestRouteToArea to allow a single parameter version
     // if no ID is provided, assume it should be the owner
@@ -2171,6 +2194,14 @@ public class Viking implements LuxAgent
         System.arraycopy(history, 0, newHistory, 0, history.length); // copy the old history into the beginning of new history, leaving one empty spot at the end
         int[] neighbors = countries[startCountry].getAdjoiningCodeList(); // get list of startCountry's neighbors
         boolean anyValidNeighbors = false; // if we find any valid neighbors, we'll switch this to true
+        
+        // check the global variable <pathCount>, which stores the total number of paths we've already created;
+        // if we've already got a hundred thousand of them, we want to stop looking to save time (and memory);
+        // if we didn't find everything, it's okay, because getAreaTakeoverPaths() will take stock of
+        // what's missing, and call findAreaPaths() again on whatever's leftover
+        if (pathCount >= 100000) {
+            return terminalPaths;
+        }
 
         // loop through all neighbors; if valid, add to history and recurse
         for (int i=0; i<neighbors.length; i++) {
@@ -2192,6 +2223,11 @@ public class Viking implements LuxAgent
             int[] historyCopy = new int[history.length];
             System.arraycopy(history, 0, historyCopy, 0, history.length);
             
+            // since we're adding a terminal path here, increment <pathCount>
+            // which keeps track of the total number of paths we have
+            pathCount++;
+            
+            // add the path
             terminalPaths.add(historyCopy);
         }
         
