@@ -246,7 +246,8 @@ public class Viking implements LuxAgent
                 // if the objective is a knockout
                 if (type == "knockout") {
                     // pick this objective if we can afford it
-                    if ((Integer) objective.get("cost") <= numberOfArmies) {
+                    // (or if we're in the placeInitialArmies() phase, we can pick it even if we can't afford it)
+                    if ((Integer) objective.get("cost") <= numberOfArmies || initial == true) {
                         picked = true; // set <picked> flag to true
                         
                         // add the knockout path to battlePlan
