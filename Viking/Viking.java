@@ -526,15 +526,153 @@ public class Viking implements LuxAgent
         // the fitness value stored for each exterior border in the hashmap
         // is its ideal strength / actual strength
         HashMap<Integer,Double> extBordersFitness = findAllExteriorBordersFitness();
+        int[] extBorders = convertListToIntArray(extBordersFitness.keySet());
         
-        // PHASE 1
+        // PHASE 1 - proportionalize between any groups of contiguous borders
+        testChat("fortifyPhase","=== PHASE 1: proportionalize contiguous borders ===");
+        //fortifyBetweenExteriorBorders(extBorders);
+        
+        // PHASE 2 - move any free armies on the board either to an exterior border or to the front
+        testChat("fortifyPhase","=== PHASE 2: move free armies toward borders or the front ===");
+        //fortifyFreeArmies(extBordersFitness);
 
+    }
+    
+    // called when we win the game
+    public String youWon()
+    { 
+        // For variety we store a bunch of answers and pick one at random to return.
+        String[] answers = new String[] {
+            "I won",
+            "beees?!"
+        };
+        
+        return answers[ rand.nextInt(answers.length) ];
+    }
+    
+    public String message( String message, Object data )
+    {
+        return null;
+    }
+    
+    /*
+     *   ********* HELPER / CUSTOM FUNCTIONS *********
+     */
+    
+    
+    protected void fortifyBetweenExteriorBorders(int[] extBorders) {
         // find out if any group of exterior borders touch each other
-        // and do any necessary moving between them to even things out in proportion to need
+        ArrayList<int[]> clumpedExtBorders = findContiguousAreas(extBorders);
         
-        // PHASE 2
+        // loop through each clump of borders, and (if any clump is bigger than 1 country)
+        // fortify armies between them such that they all have the same percentage of the
+        // strength that they are supposed to be (as stored in <borderArmies>)
+        for (int[] clump : clumpedExtBorders) {
+            if (clump.length > 1) { // if this clump is longer than one, then we have a group of borders that are contiguous with each other
+                
+                
+                // first, find the percentage of desired border strength that we're shooting for
+                // given the total number of armies we have to work with in this clump
+                int totalClumpArmies = 0; // total number of armies actually on this clump
+                int totalDesiredArmies  = 0; // total number of armies in <borderArmies> for every country in this clump
+                for (int country : clump) {
+                    totalClumpArmies += countries[country].getArmies() - 1;
+                    totalDesiredArmies += borderArmies.get(country);
+                }
+                double plannedPercent = (double) totalClumpArmies / (double) totalDesiredArmies; // the percentage of <borderArmies> value we want to even each country out to
+                
+                testChat("fortifyPhase","Armies to move for each country in this clump (and borderArmies value):");
+                
+                // now we'll find and store the difference between the actual number of armies on each country
+                // and the number of armies we're shooting for on each country (the calculated percentage of its <borderArmies> value)
+                HashMap<Integer, Integer> armyOffset = new HashMap<Integer, Integer>();
+                for (int country : clump) {
+                    int plannedArmies = (int) Math.floor(plannedPercent * (double) borderArmies.get(country));
+                    armyOffset.put(country, countries[country].getArmies() - 1 - plannedArmies);
+                    
+                    testChat("fortifyPhase",getCountryName(country) + ": " + armyOffset.get(country) + " (" + borderArmies.get(country) + ")");
+                }
+                
+                // create a list version of the clump that we can loop through
+                // and remove countries from as we take care of them
+                ArrayList<Integer> moveTo = new ArrayList<Integer>();
+                for (int i : clump) {
+                    moveTo.add(i);
+                }
+                
+                // so now we have a hashmap containing all the countries in the clump
+                // and a measure of how many armies they need to get up to their proper proportion of the available armies;
+                // so we'll loop through the clump, picking out the neediest country each iteration
+                // and getting it some help from its neighbor borders
+                while (moveTo.size() > 0) {
+                    // find the neediest country
+                    int needyCountry = keyWithSmallestValue(armyOffset);
+                    int offset = armyOffset.get(needyCountry);
+                    
+                    // if the offset of the neediest country is negative, that means it actually needs some armies
+                    // so we'll pull some from its richest neighbor borders
+                    if (offset < 0) {
+                        
+                        // find the countries in the clump that are neighbors of the needy country
+                        ArrayList<Integer> neighborBorders = new ArrayList<Integer>();
+                        int neighborsTotal = 0;
+                        int[] neighbors = countries[needyCountry].getAdjoiningCodeList(); // all neighbors of <needyCountry>
+                        for (int neighbor : neighbors) { // loop through neighbors
+                            // if this neighbor is one of the exterior borders in this clump
+                            // and it has some moveable armies
+                            if (armyOffset.containsKey(neighbor) && countries[neighbor].getMoveableArmies() > 0) {
+                                neighborBorders.add(neighbor); // add it to the list
+                            }
+                        }
+                        
+                        // if <needyCountry> has some neighbor borders that can contribute armies
+                        // move some from them to it
+                        if (neighborBorders.size() > 0) {
+                            
+                            // so now we have a list of the neighbors that we can get armies from;
+                            // since we want to get countries from our richest neighbors first, we'll
+                            // sort the list by each country's offset in descending order;
+                            for (int i=1; i<neighborBorders.size(); i++) {
+                                int sortValue = armyOffset.get(neighborBorders.get(i));
+                                int j;
+                                for (j=i; j>0 && armyOffset.get(neighborBorders.get(j-1))<sortValue; j--) {
+                                }
+                                neighborBorders.add(j,neighborBorders.remove(i));
+                            }
+                            
+                            testChat("fortifyPhase","Neighbors of " + getCountryName(needyCountry) + " in descending offset order: " + Arrays.toString(getCountryNames(neighborBorders)));
+                            
+                            // now we'll loop over the list, taking armies from the richest country until it gets whittled
+                            // down to the size of the next richest country, and then equally from both of them
+                            // until they get whittled down to the size of the third richest, and so on...
+                            
+                            
+
+                            
+                            
+                            
+                        } else {
+                            // if we're here, <neighborBorders> is empty, which means this country
+                            // doesn't have any neighbors that can give it armies, so we'll
+                            // remove it from the list and move on to the next neediest country
+                            moveTo.remove((Integer) needyCountry);
+                        }
+                    } else {
+                        // if we're here, that means the offset of the neediest country was non-negative,
+                        // which means that no country left in the clump actually needs to get any armies from
+                        // its neighbors, so we're done
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    protected void fortifyFreeArmies(HashMap<Integer,Double> extBordersFitness) {
+        // create array of exterior borders
+        int[] extBorders = convertListToIntArray(extBordersFitness.keySet());
         
-        // now loop through all the countries we own
+        // loop through all the countries we own
         // and move any free armies we find (that aren't on an exterior border)
         // either toward an exterior border or toward the closest country that neighbors an enemy
         testChat("fortifyPhase", "Countries we can move from: ");
@@ -577,11 +715,11 @@ public class Viking implements LuxAgent
                 }
                 
                 testChat("fortifyPhase",Arrays.toString(getCountryNames(pickedPath)) + " - " + highestScore + " - front lines");
-
+                
                 // now loop through all exterior borders and find paths to them,
                 // scoring them by ( ideal strength / (actual strength * path length^2) )
                 // and pick the highest overall score
-                for (int border : extBordersFitness.keySet()) {
+                for (int border : extBorders) {
                     // get a path to the next exterior border and calculate its score
                     int[] candidatePath = BoardHelper.friendlyPathBetweenCountries(country, border, countries);
                     if (candidatePath != null) {
@@ -621,27 +759,6 @@ public class Viking implements LuxAgent
             }
         }
     }
-    
-    // called when we win the game
-    public String youWon()
-    { 
-        // For variety we store a bunch of answers and pick one at random to return.
-        String[] answers = new String[] {
-            "I won",
-            "beees?!"
-        };
-        
-        return answers[ rand.nextInt(answers.length) ];
-    }
-    
-    public String message( String message, Object data )
-    {
-        return null;
-    }
-    
-    /*
-     *   ********* HELPER / CUSTOM FUNCTIONS *********
-     */
     
     // given a country <startCountry>, find and return a path (int[]) to the nearest country
     // that has a neighbor which is not owned by the owner of <startCountry>;
@@ -3049,5 +3166,25 @@ public class Viking implements LuxAgent
     protected int[] convertListToIntArray(Set<Integer> set) {
         ArrayList<Integer> list = new ArrayList<Integer>(set);
         return convertListToIntArray(list);
+    }
+    
+    // returns the key that contains the lowest value in a HashMap<Integer, Integer>
+    protected Integer keyWithSmallestValue(HashMap<Integer, Integer> map) {
+        if (map.isEmpty()) {
+            return null;
+        }
+        
+        ArrayList<Integer> keys = new ArrayList<Integer>(map.keySet());
+        int smallestValKey = 0;
+        int smallestValue = keys.get(0);
+        for (int key : keys) {
+            int value = map.get(key);
+            if (value < smallestValue) {
+                smallestValue = value;
+                smallestValKey = key;
+            }
+        }
+        
+        return smallestValKey;
     }
 }
