@@ -529,12 +529,10 @@ public class Viking implements LuxAgent
         int[] extBorders = convertListToIntArray(extBordersFitness.keySet());
         
         // PHASE 1 - proportionalize between any groups of contiguous borders
-        testChat("fortifyPhase","=== PHASE 1: proportionalize contiguous borders ===");
-        //fortifyBetweenExteriorBorders(extBorders);
+        fortifyBetweenExteriorBorders(extBorders);
         
         // PHASE 2 - move any free armies on the board either to an exterior border or to the front
-        testChat("fortifyPhase","=== PHASE 2: move free armies toward borders or the front ===");
-        //fortifyFreeArmies(extBordersFitness);
+        fortifyFreeArmies(extBordersFitness);
 
     }
     
@@ -561,6 +559,8 @@ public class Viking implements LuxAgent
     
     
     protected void fortifyBetweenExteriorBorders(int[] extBorders) {
+        testChat("fortifyPhase","=== PHASE 1: proportionalize contiguous borders ===");
+        
         // find out if any group of exterior borders touch each other
         ArrayList<int[]> clumpedExtBorders = findContiguousAreas(extBorders);
         
@@ -590,7 +590,7 @@ public class Viking implements LuxAgent
                     int plannedArmies = (int) Math.floor(plannedPercent * (double) borderArmies.get(country));
                     armyOffset.put(country, countries[country].getArmies() - 1 - plannedArmies);
                     
-                    testChat("fortifyPhase",getCountryName(country) + ": " + armyOffset.get(country) + " (" + borderArmies.get(country) + ")");
+                    testChat("fortifyPhase",getCountryName(country) + " offset: " + armyOffset.get(country) + " - shooting for: " + plannedArmies + " - (actual armies: " + (countries[country].getArmies()-1) + ", borderArmies: " + borderArmies.get(country) + ")");
                 }
                 
                 // create a list version of the clump that we can loop through
@@ -606,12 +606,23 @@ public class Viking implements LuxAgent
                 // and getting it some help from its neighbor borders
                 while (moveTo.size() > 0) {
                     // find the neediest country
-                    int needyCountry = keyWithSmallestValue(armyOffset);
+                    // i.e. the country with the lowest offset that is in <moveTo>
+                    int needyCountry = -1;
+                    int lowestOffset = moveTo.get(0);
+                    for (int country : moveTo) {
+                        int offset = armyOffset.get(country);
+                        if (offset <= lowestOffset) {
+                            lowestOffset = offset;
+                            needyCountry = country;
+                        }
+                    }
                     int offset = armyOffset.get(needyCountry);
                     
                     // if the offset of the neediest country is negative, that means it actually needs some armies
                     // so we'll pull some from its richest neighbor borders
                     if (offset < 0) {
+                        
+                        testChat("fortifyPhase","-- Neediest country this loop: " + getCountryName(needyCountry) + " (offset: " + offset + ")");
                         
                         // find the countries in the clump that are neighbors of the needy country
                         ArrayList<Integer> neighborBorders = new ArrayList<Integer>();
@@ -631,7 +642,7 @@ public class Viking implements LuxAgent
                             
                             // so now we have a list of the neighbors that we can get armies from;
                             // since we want to get countries from our richest neighbors first, we'll
-                            // sort the list by each country's offset in descending order;
+                            // sort the list by each country's offset in descending order
                             for (int i=1; i<neighborBorders.size(); i++) {
                                 int sortValue = armyOffset.get(neighborBorders.get(i));
                                 int j;
@@ -642,22 +653,89 @@ public class Viking implements LuxAgent
                             
                             testChat("fortifyPhase","Neighbors of " + getCountryName(needyCountry) + " in descending offset order: " + Arrays.toString(getCountryNames(neighborBorders)));
                             
-                            // now we'll loop over the list, taking armies from the richest country until it gets whittled
-                            // down to the size of the next richest country, and then equally from both of them
+                            //
+                            // now we'll loop over the list, taking armies from the richest country until its offset gets whittled
+                            // down to the size of the next richest country's offset, and then equally from both of them
                             // until they get whittled down to the size of the third richest, and so on...
+                            //
                             
+                            // <offset> is a negative number; <need> is a positive number that represents how many armies we need to try to move to <needyCountry>
+                            int need = 0 - offset;
+                            
+                            // loop through the neighbors, from richest to poorest
+                            // as long as we still need some armies
+                            for (int i=0; i<neighborBorders.size() && need>0; i++) {
+                                
+                                // <armiesThisChunk> is the total number of armies we will try to move this iteration,
+                                // evenly split from all the countries to the left of and including the ith country
+                                int armiesThisChunk;
+                                
+                                // if we're not on the last neighbor, we want to move just enough armies
+                                // from all the neighbors from here to the left so that they match the
+                                // offset of the next country in the list; this way, as we go through, we
+                                // ensure that we're distributing armies to <needyCountry> evenly from the
+                                // richest neighbors, while not taking any from the poorest neighbors
+                                // unless we need to
+                                if (i < neighborBorders.size() - 1) {
+                                    // store the difference between the offsets of the current neighbor and the next one (should always be >= 0)
+                                    int difference = armyOffset.get(neighborBorders.get(i)) - armyOffset.get(neighborBorders.get(i+1));
+                                    
+                                    // so we'll try to move either the difference times the number of neighbors in this chunk (from here to the left)
+                                    // or else just the total <need>, whichever is smaller
+                                    armiesThisChunk = Math.min(difference * (i+1),need);
+                                } else {
+                                    // if we're here, we're on the last neighbor in the list,
+                                    // so we want to just try to move all the armies we need
+                                    // from all of the countries evenly
+                                    armiesThisChunk = need;
+                                }
+                                
+                                // this is the number of armies we want to try to move from each neighbor
+                                // to the left of and including the ith neighbor
+                                int armiesPerCountry = (int) Math.ceil((double) armiesThisChunk / (double) (i+1));
+                                
+                                // now we'll loop through all the countries to the left of and including the ith neighbor
+                                // and try to move the same number of armies from each one (stopping if we've satisfied <need> at any point)
+                                // until their offsets are down to the same level as the next country in the list
+                                for (int j=0; j<=i && need>0; j++) {
+                                    // the country we're moving from this loop
+                                    int moveFromCountry = neighborBorders.get(j);
+                                    
+                                    // the number of armies to actually move is <armiesPerCountry>
+                                    // or the max amount of moveable armies this country has,
+                                    // or <need>, whichever of the three is smallest
+                                    int armiesToMove = Math.min(Math.min(armiesPerCountry,need), countries[moveFromCountry].getMoveableArmies());
+                                    
+                                    // now actually move the armies from this country to <needyCountry>
+                                    if (armiesToMove > 0 && countries[moveFromCountry].getOwner() == ID && countries[needyCountry].getOwner() == ID) { // these are all just safety checks
+                                        board.fortifyArmies(armiesToMove, moveFromCountry, needyCountry);
+                                        
+                                        testChat("fortifyPhase","   ...moving " + armiesToMove + " from " + getCountryName(moveFromCountry) + " (offset: " + armyOffset.get(moveFromCountry) + ") to " + getCountryName(needyCountry) + " (offset: " + armyOffset.get(needyCountry) + ")");
+                                    }
+                                    
+                                    // subtract the armies we moved from <need>
+                                    need -= armiesToMove;
+                                    
+                                    // subtract the armies we moved from the offset for this country
+                                    armyOffset.put(moveFromCountry, armyOffset.get(moveFromCountry) - armiesToMove);
+                                    
+                                    // add the armies we moved to the offset for <needyCountry>
+                                    armyOffset.put(needyCountry, armyOffset.get(needyCountry) + armiesToMove);
+                                }
+                            }
                             
 
-                            
-                            
-                            
                         } else {
                             // if we're here, <neighborBorders> is empty, which means this country
                             // doesn't have any neighbors that can give it armies, so we'll
                             // remove it from the list and move on to the next neediest country
-                            moveTo.remove((Integer) needyCountry);
+                            moveTo.remove((Integer) needyCountry); // must cast as an Integer object in order to remove the object that matches <needyCountry> instead of the index
+                            
+                            testChat("fortifyPhase","Can't move any armies to " + getCountryName(needyCountry) + " - removing from clump");
                         }
                     } else {
+                        testChat("fortifyPhase","-- No needy countries in this clump");
+                        
                         // if we're here, that means the offset of the neediest country was non-negative,
                         // which means that no country left in the clump actually needs to get any armies from
                         // its neighbors, so we're done
@@ -669,6 +747,8 @@ public class Viking implements LuxAgent
     }
     
     protected void fortifyFreeArmies(HashMap<Integer,Double> extBordersFitness) {
+        testChat("fortifyPhase","=== PHASE 2: move free armies toward borders or the front ===");
+        
         // create array of exterior borders
         int[] extBorders = convertListToIntArray(extBordersFitness.keySet());
         
@@ -1176,6 +1256,17 @@ public class Viking implements LuxAgent
             
             // create takeover objective of this area
             HashMap<String, Object> objective = calculateTakeoverObjective(area);
+            
+            // FORCE THE BOT TO ALWAYS CHOOSE TO TAKEOVER A PARTICULAR CONTINENT FOR TESTING PURPOSES
+/*            int[] continents = (int[]) objective.get("continentIDs");
+            for (int continent : continents) {
+                String name = board.getContinentName(continent);
+                if (name.equals("Canada")) {
+                    objective.put("score", Float.MAX_VALUE);
+                    board.sendChat("SETTING SCORE FOR " + name + " TO MAX FLOAT VALUE");
+                }
+            }
+*/
             
             // add objective to objectiveList arraylist
             objectiveList.add(objective);
