@@ -581,6 +581,134 @@ public class Viking implements LuxAgent
                 }
                 double plannedPercent = (double) totalClumpArmies / (double) totalDesiredArmies; // the percentage of <borderArmies> value we want to even each country out to
                 
+                testChat("fortifyPhase","Each country in this clump: ----------------");
+
+                // now we'll find and store the difference between the actual number of armies on each country
+                // and the number of armies we're shooting for on each country (the calculated percentage of its <borderArmies> value)
+                HashMap<Integer, Integer> armyOffset = new HashMap<Integer, Integer>();
+                for (int country : clump) {
+                    int plannedArmies = (int) Math.floor(plannedPercent * (double) borderArmies.get(country));
+                    armyOffset.put(country, countries[country].getArmies() - 1 - plannedArmies);
+                    
+                    testChat("fortifyPhase",getCountryName(country) + " offset: " + armyOffset.get(country) + " - shooting for: " + plannedArmies + " - (actual armies: " + (countries[country].getArmies()-1) + ", borderArmies: " + borderArmies.get(country) + ")");
+                }
+                
+                testChat("fortifyPhase","--------------------------------------------");
+                
+                // we'll set this to true if we moved some armies on an iteration of the loop
+                boolean moved = true;
+                
+                // so now we have a hashmap containing all the countries in the clump
+                // and a measure of how many armies they need to get up to their proper proportion of the available armies;
+                // so we'll loop through the clump,
+                while (moved) {
+                    // set flag to false
+                    moved = false;
+                    
+                    // sort the clump in ascending order of offset so the neediest countries are first
+                    for (int i=1; i<clump.length; i++) {
+                        int sortElement = clump[i];
+                        int sortValue = armyOffset.get(sortElement);
+                        int j;
+                        for(j=i; j>0 && armyOffset.get(clump[j - 1])>sortValue; j--) {
+                            clump[j] = clump[j - 1];
+                        }
+                        clump[j] = sortElement;
+                    }
+                    
+                    testChat("fortifyPhase","---### loop through clump ###---");
+                    
+                    // now loop through the clump once and equalize each country's offsets (starting with the neediest country)
+                    // with all of its neighbors one at a time (starting with the richest neighbor)
+                    for (int country : clump) {
+                        
+                        testChat("fortifyPhase","Checking " + getCountryName(country) + "...");
+                        
+                        // get list of <country>'s neighbors that are in the clump
+                        int[] allNeighbors = countries[country].getAdjoiningCodeList(); // all neighbors of <country>
+                        ArrayList<Integer> neighbors = new ArrayList<Integer>();
+                        for (int neighbor : allNeighbors) { // loop through neighbors
+                            // if this neighbor is one of the exterior borders in this clump
+                            if (armyOffset.containsKey(neighbor)) {
+                                neighbors.add(neighbor); // add it to the list
+                            }
+                        }
+                        
+                        // sort the list of neighbors so the richest ones are first
+                        for (int i=1; i<neighbors.size(); i++) {
+                            int sortValue = armyOffset.get(neighbors.get(i));
+                            int j;
+                            for (j=i; j>0 && armyOffset.get(neighbors.get(j-1))<sortValue; j--) {
+                            }
+                            neighbors.add(j,neighbors.remove(i));
+                        }
+                        
+                        // now loop through the neighbors and equalize with each of them one at a time
+                        for (int neighbor : neighbors) {
+                            // only move armies if the difference between the two countries' offsets is more than 1
+                            if (Math.abs(armyOffset.get(country) - armyOffset.get(neighbor)) > 1) {
+                                int fromCountry = armyOffset.get(country) > armyOffset.get(neighbor) ? country : neighbor;
+                                int toCountry = armyOffset.get(country) > armyOffset.get(neighbor) ? neighbor : country;
+                                
+                                //the amount to move is the difference between the two's offsets, divided by two, and rounded down
+                                //java automatically rounds down when dividing two ints
+                                //if this is more than the armies which can be moved, then just move as many as we can
+                                int moveAmount = Math.min((armyOffset.get(fromCountry) - armyOffset.get(toCountry))/2, getRealMoveableArmies(fromCountry));
+                                
+                                // if there are any armies to move, move them
+                                if (moveAmount > 0) {
+                                    // move the armies
+                                    board.fortifyArmies(moveAmount, fromCountry, toCountry);
+                                    
+                                    testChat("fortifyPhase","     ...moving " + moveAmount + " from " + getCountryName(fromCountry) + " (offset: " + armyOffset.get(fromCountry) + ") to " + getCountryName(toCountry) + " (offset: " + armyOffset.get(toCountry) + ")");
+                                    
+                                    // subtract the armies we moved from the offset for <fromCountry>
+                                    armyOffset.put(fromCountry, armyOffset.get(fromCountry) - moveAmount);
+                                    
+                                    // add the armies we moved to the offset for <toCountry>
+                                    armyOffset.put(toCountry, armyOffset.get(toCountry) + moveAmount);
+
+                                    // set the <moved> flag to true
+                                    moved = true;
+                                }
+                            } // end if difference is > 1
+                        } // end loop through neighbors of this country
+                    } // end loop through this clump
+                } // end while(moved)
+                
+                testChat("fortifyPhase","-- Results for this clump: --");
+                for (int country : clump) {
+                    int plannedArmies = countries[country].getArmies() - 1 - armyOffset.get(country);
+                    testChat("fortifyPhase",getCountryName(country) + " offset: " + armyOffset.get(country) + " - shooting for: " + plannedArmies + " - (actual armies: " + (countries[country].getArmies()-1) + ", borderArmies: " + borderArmies.get(country) + ")");
+                }
+                
+            } // end if clump is longer than 1 country
+        } // end for-loop through clumps
+    } // end fortifyBetweenExteriorBorders()
+    
+    protected void fortifyBetweenExteriorBordersOLD(int[] extBorders) {
+        testChat("fortifyPhase","=== PHASE 1: proportionalize contiguous borders ===");
+        
+        // find out if any group of exterior borders touch each other
+        ArrayList<int[]> clumpedExtBorders = findContiguousAreas(extBorders);
+        
+        // loop through each clump of borders, and (if any clump is bigger than 1 country)
+        // fortify armies between them such that they all have the same percentage of the
+        // strength that they are supposed to be (as stored in <borderArmies>)
+        for (int[] clump : clumpedExtBorders) {
+            if (clump.length > 1) { // if this clump is longer than one, then we have a group of borders that are contiguous with each other
+                
+                
+                // first, find the percentage of desired border strength that we're shooting for
+                // given the total number of armies we have to work with in this clump
+                int totalClumpArmies = 0; // total number of armies actually on this clump
+                int totalDesiredArmies  = 0; // total number of armies in <borderArmies> for every country in this clump
+                for (int country : clump) {
+                    totalClumpArmies += countries[country].getArmies() - 1;
+                    totalDesiredArmies += borderArmies.get(country);
+                }
+                double plannedPercent = (double) totalClumpArmies / (double) totalDesiredArmies; // the percentage of <borderArmies> value we want to even each country out to
+                
                 testChat("fortifyPhase","Armies to move for each country in this clump (and borderArmies value):");
                 
                 // now we'll find and store the difference between the actual number of armies on each country
@@ -599,6 +727,11 @@ public class Viking implements LuxAgent
                 for (int i : clump) {
                     moveTo.add(i);
                 }
+                
+                // this will be used to remember the country we just moved armies to
+                // on the previous loop, so that we don't pull from it right after we
+                // just put armies on it, which saves us from juggling back and forth
+                int lastMovedTo = -1;
                 
                 // so now we have a hashmap containing all the countries in the clump
                 // and a measure of how many armies they need to get up to their proper proportion of the available armies;
@@ -631,7 +764,8 @@ public class Viking implements LuxAgent
                         for (int neighbor : neighbors) { // loop through neighbors
                             // if this neighbor is one of the exterior borders in this clump
                             // and it has some moveable armies
-                            if (armyOffset.containsKey(neighbor) && countries[neighbor].getMoveableArmies() > 0) {
+                            // and it's NOT the last country we moved armies to
+                            if (armyOffset.containsKey(neighbor) && getRealMoveableArmies(neighbor) > 0) {
                                 neighborBorders.add(neighbor); // add it to the list
                             }
                         }
@@ -704,7 +838,7 @@ public class Viking implements LuxAgent
                                     // the number of armies to actually move is <armiesPerCountry>
                                     // or the max amount of moveable armies this country has,
                                     // or <need>, whichever of the three is smallest
-                                    int armiesToMove = Math.min(Math.min(armiesPerCountry,need), countries[moveFromCountry].getMoveableArmies());
+                                    int armiesToMove = Math.min(Math.min(armiesPerCountry,need), getRealMoveableArmies(moveFromCountry));
                                     
                                     // now actually move the armies from this country to <needyCountry>
                                     if (armiesToMove > 0 && countries[moveFromCountry].getOwner() == ID && countries[needyCountry].getOwner() == ID) { // these are all just safety checks
@@ -724,7 +858,7 @@ public class Viking implements LuxAgent
                                 }
                             }
                             
-
+                            
                         } else {
                             // if we're here, <neighborBorders> is empty, which means this country
                             // doesn't have any neighbors that can give it armies, so we'll
@@ -733,6 +867,10 @@ public class Viking implements LuxAgent
                             
                             testChat("fortifyPhase","Can't move any armies to " + getCountryName(needyCountry) + " - removing from clump");
                         }
+                        
+                        // remember next loop which country we last moved armies to
+                        lastMovedTo = needyCountry;
+                        
                     } else {
                         testChat("fortifyPhase","-- No needy countries in this clump");
                         
@@ -838,6 +976,11 @@ public class Viking implements LuxAgent
                 }
             }
         }
+    }
+    
+    // returns the number of actual armies on a country that can be fortified
+    protected int getRealMoveableArmies(int country) {
+        return Math.min(countries[country].getMoveableArmies(),countries[country].getArmies()-1);
     }
     
     // given a country <startCountry>, find and return a path (int[]) to the nearest country
@@ -1261,7 +1404,7 @@ public class Viking implements LuxAgent
 /*            int[] continents = (int[]) objective.get("continentIDs");
             for (int continent : continents) {
                 String name = board.getContinentName(continent);
-                if (name.equals("Canada")) {
+                if (name.equals("Eastern Africa")) {
                     objective.put("score", Float.MAX_VALUE);
                     board.sendChat("SETTING SCORE FOR " + name + " TO MAX FLOAT VALUE");
                 }
