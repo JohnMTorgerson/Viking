@@ -40,7 +40,6 @@ public class Viking implements LuxAgent
     protected Map<Integer, Integer> borderArmies;
     protected Map<Integer, Integer> idealBorderArmies;
 
-    
     // will contain int[] arrays of country codes, called "areas"
     // each area is based on a continent of the map, but may contain
     // extra countries outside of that continent to reduce the number of
@@ -51,6 +50,12 @@ public class Viking implements LuxAgent
     // used in findAreaPaths() when we find paths recursively by brute force
     // to keep track of how many we've found so far
     protected int pathCount;
+    
+    // the universal factor by which we multiply our gain from taking over countries
+    // that we aren't protecting with a border; in other words, the expected likelihood
+    // that we'll keep a country we take over but don't guard;
+    // we use this value to help score landgrabs and other paths that aren't part of takeover areas
+    protected float unguardedKeepChance;
     
     public Viking()
     {
@@ -71,7 +76,7 @@ public class Viking implements LuxAgent
         numConts = board.getNumberOfContinents();
         smartAreas = calculateSmartAreas();
         pathCount = 0;
-
+        unguardedKeepChance = 1.0f / 3.0f;
     }
     
     public String name()
@@ -95,7 +100,7 @@ public class Viking implements LuxAgent
             "placeArmies",
             "attackPhase",
 //            "moveArmiesIn",
-            "fortifyPhase",
+//            "fortifyPhase",
             
 //            "continentFitness",
 //            "getAreaTakeoverPaths",
@@ -1021,7 +1026,7 @@ public class Viking implements LuxAgent
 
             // calculate and set score
             float cardsValue = ((float) board.getPlayerCards(player) / 3.0f) * (float) board.getNextCardSetValue();  //(each card is treated as 1/3 the value of the next card set)
-            float gain = (float) totalCountriesToTake.size() / 6.0f + cardsValue; // <gain> is the expected increase in our income: mainly the value of the cards we'll get, but also the number of countries we'll take over divided by 3, and then by 2 (an arbitrary reduction to account for the probability that we won't keep these countries)
+            float gain = unguardedKeepChance * (float) totalCountriesToTake.size() / 3.0f + cardsValue; // <gain> is the expected increase in our income: mainly the value of the cards we'll get, but also the number of countries we'll take over divided by 3, and then multiplied by <unguardedKeepChance> (a global, arbitrary reduction to account for the probability that we won't keep these countries)
             float enemyLoss = 0.0f; // <enemyLoss> is how much we reduce the bonus of any enemies we travel through, weighted by their relative income
             for (int country : totalCountriesToTake) { // loop through each enemy country in the (path and) area
                 enemyLoss += board.getPlayerIncome(countries[country].getOwner()); // add the income of the owner of each country
@@ -1090,6 +1095,7 @@ public class Viking implements LuxAgent
         //
         ArrayList<Integer> pickedPath = new ArrayList<Integer>(); // will contain the path we pick
         float highestScore = 0.0f; // the highest value (gain + enemy losses over cost) we've seen so far, as we loop through and check each path
+        float oldHighestScore = 0.0f;
         int pickedPathCost = 0; // the cost of the path we'll pick
         // we want to prefer paths which run through less populated areas;
         // we'll do a rough approximation of that by calculating the enemy army density in each continent
@@ -1135,12 +1141,15 @@ public class Viking implements LuxAgent
             // first, calculate our gain and the enemy losses from taking over the path
             int length = path.size(); // the length of the path
             float gain = 0.0f; // the value of the countries we gain
+            float oldGain;
             float enemyLoss = 0.0f; // the loss to our enemies when we take over the countries in this path
             for (int i=1; i<length; i++) { // loop through all the countries in this path except the first one (which we own)
-                gain += (1.0f - adjustedContDensity[countries[i].getContinent()] / highestAdjustedDensity) / 2; // this is the calculated value of each country designed to favor continents with fewer enemy armies around (value should be between 0.0 and 0.5)
+                gain += 1.0f - adjustedContDensity[countries[i].getContinent()] / highestAdjustedDensity; // this is the calculated value of each country designed to favor continents with fewer enemy armies around (value should be between 0.0 and 1.0)
                 enemyLoss += board.getPlayerIncome(countries[path.get(i)].getOwner()); // add the income of the owner of each country
             }
-            gain /= 3.0f; // divide the total gain by 3, because every 3 countries is worth 1 income point
+            
+            oldGain = gain / 6.0f;
+            gain = unguardedKeepChance * gain / 3.0f; // divide the total gain by 3, because every 3 countries is worth 1 income point, and multiply by <unguardedKeepChance>, a global (arbitrary) value that accounts for the chance that we'll keep countries unprotected by border garrisons
             enemyLoss /= 3 * getTotalEnemyIncome() + 0.00001f; // divide the total by 3, because every 3 countries is worth 1 income point, and divide by total enemy income (and add a tiny fudge just in case <totalEnemyIncome> is 0)
             
             // then calculate the actual cost of taking over the path
@@ -1148,11 +1157,13 @@ public class Viking implements LuxAgent
             
             // and the score
             float score = 10f * (gain + enemyLoss) / ((float) cost + 0.00001f);
+            float oldScore = 10f * (oldGain + enemyLoss) / ((float) cost + 0.00001f);
             
             // then compare this path's score to the highest we've seen so far
             // and if they are higher, tentatively choose this path (update <pickedPath>, <pickedPathCost> and <highestScore> to this path)
             if (score > highestScore) {
                 highestScore = score;
+                oldHighestScore = oldScore;
                 pickedPath = path;
                 pickedPathCost = cost;
             }
@@ -1187,7 +1198,9 @@ public class Viking implements LuxAgent
             // set summary string (this is just useful info for debugging)
             String summary = "landgrab  - score: ";
             String scoreStr = "" + highestScore;
+            String oldScoreStr = "" + oldHighestScore;
             summary += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
+            summary += " (old: " + (oldScoreStr.length() >= 6 ? oldScoreStr.substring(0, 6) : oldScoreStr) + ")";
             summary += " - " + getCountryName(route[0]) + "..." + getCountryName(route[route.length - 1]) + ", ";
             summary += "cost: " + pickedPathCost;
             objective.put("summary", summary);
@@ -1286,8 +1299,14 @@ public class Viking implements LuxAgent
         }
         int[] pathAndArea = convertListToIntArray(pathAndAreaList); // convert the arraylist into an array for use in getGlobCost(); pathAndArea now holds all the enemy countries in the area we're taking over, plus any enemy countries we have to take over to get there
         cost = getGlobCost(pathAndArea); // estimate the cost of the area and the path together
+        int totalIdealBorders = 0;
+        int totalActualBorders = 0;
         for (int country : area) { // now loop through every country in the area to add border garrisons to the cost
-            int borderStrength = calculateBorderStrength(country, area, calculateIdealBorderStrength(country,area), bonus); // what the border garrison should be for this country; if it is not a border, this will be 0
+            int idealBorderStrength = calculateIdealBorderStrength(country, area);
+            int borderStrength = calculateBorderStrength(country, area, idealBorderStrength, bonus); // what the border garrison should be for this country; if it is not a border, this will be 0
+            totalIdealBorders += idealBorderStrength;
+            totalActualBorders += borderStrength;
+            //borderStrength += (int) Math.round((idealBorderStrength - borderStrength) / 3.0f); // just an idea too make areas with high ideal borders less attractive
             int extantBorderArmies = getProjectedCountryOwner(country) == ID ? getProjectedArmies(country) - 1 : 0; // how many (extra) armies are on this country if we own it; if we don't own it, 0
             cost += Math.max(0,borderStrength - extantBorderArmies); // add the border strength we want to the cost minus any armies we already have on that border (or 0 if there are more than enough armies already there)
         }
@@ -1303,27 +1322,33 @@ public class Viking implements LuxAgent
         int oldCostInt = (int) Math.ceil(oldCost);
         objective.put("oldCost",oldCostInt);
         
-        // calculate and set score (legacy)
-        float turns = Math.max(1, (float) cost / ((float) board.getPlayerIncome(ID) + .00001f));
-        float score = 10f * (float) bonus / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5));
-        objective.put("oldScore", score);
-        
         // calculate and set score
-        float gain = bonus + (float) area.length / 3.0f + (float) Math.max(0,entryPath.length-2) / 6.0f; // <gain> is the expected increase in our income: the area bonus + the number of countries divided by 3 + any countries we'll take over on the way there divided by 3, and then by 2 (an arbitrary reduction to account for the probability that we won't keep these countries)
+        float guardedKeepChance = (float) Math.pow((float) totalActualBorders / (float) totalIdealBorders, 0.5f);
+        float gain = guardedKeepChance * (bonus + (float) area.length / 3.0f) + unguardedKeepChance * (float) Math.max(0,entryPath.length-2) / 3.0f; // <gain> is the expected increase in our income: the area bonus + the number of countries divided by 3 + any countries we'll take over on the way there divided by 3, and then multiplied by <unguardedKeepChance> (a global, arbitrary reduction to account for the probability that we won't keep these countries)
+        
         float enemyLoss = 0.0f; // <enemyLoss> is how much we reduce the bonus of any enemies we travel through, weighted by their relative income
         for (int country : pathAndArea) { // loop through each enemy country in the (path and) area
             enemyLoss += board.getPlayerIncome(countries[country].getOwner()); // add the income of the owner of each country
         }
         enemyLoss /= 3 * getTotalEnemyIncome() + 0.00001f; // divide the total by 3, because every 3 countries is worth 1 income point, and divide by total enemy income and add a tiny fudge just in case <totalEnemyIncome> is 0
-        score = 10f * ((float) gain + enemyLoss) / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5)); // the score is our gain + the enemies' loss divided by cost and the square root of the number of turns it will take (to discourage large projects)
+        float turns = Math.max(1, (float) cost / ((float) board.getPlayerIncome(ID) + .00001f));
+        float score = 10f * ((float) gain + enemyLoss) / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5)); // the score is our gain + the enemies' loss divided by cost and the square root of the number of turns it will take (to discourage large projects)
         objective.put("score", score);
+        
+        // calculate and set score (legacy)
+        float oldGain = (bonus + (float) area.length / 3.0f) + (float) Math.max(0,entryPath.length-2) / 6.0f;
+        float oldScore = 10f * ((float) oldGain + enemyLoss) / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5));
+        objective.put("oldScore", oldScore);
         
         // set summary string (this is just useful info for debugging)
         String summary = "takeover  - score: ";
         String scoreStr = "" + score;
         summary += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
+        String oldScoreStr = "" + oldScore;
+        summary += " (old: " + (oldScoreStr.length() >= 6 ? oldScoreStr.substring(0, 6) : oldScoreStr) + ")";
         summary += " - " + Arrays.toString(getContinentNames(continents)) + ", ";
-        summary += "bonus: " + bonus + ", cost: " + cost;// + ", oldCost: " + oldCostInt;
+        summary += "bonus: " + bonus + ", cost: " + cost;
+        summary += ", keepChance: " + guardedKeepChance;
         objective.put("summary", summary);
         
         return objective;
@@ -1599,10 +1624,15 @@ public class Viking implements LuxAgent
         
         return strength;
     }
-    // overloaded version without the <bonuses> parameter
+    // overloaded version without the <areaBonus> parameter
     protected int calculateBorderStrength(int country, int[] area, int idealStrength) {
         int areaBonus = getAreaBonuses(area); // set this to the bonus of all continents completely contained by <area>
         return calculateBorderStrength(country, area, idealStrength, areaBonus);
+    }
+    // overloaded version without the <idealStrength> or <areaBonus> parameters
+    protected int calculateBorderStrength(int country, int[] area) {
+        int idealStrength = calculateIdealBorderStrength(country, area);
+        return calculateBorderStrength(country, area, idealStrength);
     }
     
     // called by calculateBorderStrength()
