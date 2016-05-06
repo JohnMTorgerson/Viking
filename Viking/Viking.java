@@ -112,8 +112,9 @@ public class Viking implements LuxAgent
 //            "calculateBorderStrength",
 //            "calculateIdealBorderStrength",
 //            "getAreaBonuses",
-//            "calculateLandgrabObjective",
+            "calculateLandgrabObjective",
 //            "findWeakestNeighborOwnedByStrongestEnemy",
+            "findWeakestNeighborWithMostEnemyNeighbors",
 //            "getSmartBordersArea",
 //            "calculateWipeoutObjective",
 //            "findContiguousAreas",
@@ -1071,7 +1072,7 @@ public class Viking implements LuxAgent
             path.add(ourCountry); // initially add the start country to the path
             float armiesLeft = (float) armies;
             while (armiesLeft >= 0) { // keep finding countries for the path as long as we have at least 1 army
-                int nextCountry = findWeakestNeighborOwnedByStrongestEnemy(path.get(path.size()-1), path); // find the next country in the path
+                int nextCountry = findWeakestNeighborWithMostEnemyNeighbors(path.get(path.size()-1), path); // find the next country in the path
                 if (nextCountry != -1) { // if the function returned an actual enemy neighbor
                     path.add(nextCountry); // add it to the path
                     armiesLeft -= (float) countries[nextCountry].getArmies() * 0.5f + 1f; // subtract the cost of taking over that neighbor from <armiesLeft>
@@ -1323,7 +1324,7 @@ public class Viking implements LuxAgent
         objective.put("oldCost",oldCostInt);
         
         // calculate and set score
-        float guardedKeepChance = (float) Math.pow((float) totalActualBorders / (float) totalIdealBorders, 0.5f);
+        float guardedKeepChance = 1.0f;//(float) Math.pow((float) totalActualBorders / (float) totalIdealBorders, 0.5f);
         float gain = guardedKeepChance * (bonus + (float) area.length / 3.0f) + unguardedKeepChance * (float) Math.max(0,entryPath.length-2) / 3.0f; // <gain> is the expected increase in our income: the area bonus + the number of countries divided by 3 + any countries we'll take over on the way there divided by 3, and then multiplied by <unguardedKeepChance> (a global, arbitrary reduction to account for the probability that we won't keep these countries)
         
         float enemyLoss = 0.0f; // <enemyLoss> is how much we reduce the bonus of any enemies we travel through, weighted by their relative income
@@ -2752,6 +2753,80 @@ public class Viking implements LuxAgent
     // just passes a dummy arraylist as the blacklist parameter
     protected int findWeakestNeighborOwnedByStrongestEnemy(int country) {
         return findWeakestNeighborOwnedByStrongestEnemy(country, new ArrayList<Integer>());
+    }
+    
+    // returns the country code of an enemy country that this country can attack,
+    // preferring ones with few armies and many enemy neighbors, with much more weight assigned to army count
+    // (in the event of a tie, it chooses the one owned by the strongest enemy);
+    // if a neighbor is in <blacklist>, it's ineligible; this function is used for pathfinding, so the blacklist functions as a history of countries already chosen
+    // if there are no enemy neighbors, returns -1
+    protected int findWeakestNeighborWithMostEnemyNeighbors(int country, ArrayList<Integer> blacklist) {
+        String testMessage = "Neighbors of " + getCountryName(country) + ": ";
+        
+        int[] neighbors = countries[country].getAdjoiningCodeList(); // get array of neighbors
+        ArrayList<Integer> promisingNeighbors = new ArrayList<Integer>(); // will contain the best neighbors (the weakest neighbors with the most enemy neighbors)
+        
+        // find the best neighbor(s), as scored by the number of its neighbors, divided by its armies to the tenth power
+        // and add them to the promisingNeighbors array list
+        double maxScore = 0;
+        for (int neighbor : neighbors) { // loop through all neighbors
+            
+            // if <country> can attack into <neighbor> and we don't own (or plan to own) <neighbor> and it isn't in the blacklist
+            if (countries[country].canGoto(neighbor) && getProjectedCountryOwner(neighbor) != ID && !isInArray(neighbor, blacklist)) {
+                int[] adjoiningList = countries[neighbor].getAdjoiningCodeList(); // get the neighbors of this neighbor
+                int numAdjoining = 0;
+                for (int adjoining : adjoiningList) { // loop through this neighbor's neighbors to count them
+                    // if this neighbor is valid (<neighbor> can attack it, we don't own it, and it's not in the blacklist)
+                    if (countries[neighbor].canGoto(adjoining) && getProjectedCountryOwner(adjoining) != ID && !isInArray(adjoining, blacklist)) {
+                        numAdjoining += 1; // then count it
+                    }
+                }
+                
+                testMessage += getCountryName(neighbor) + " (" + numAdjoining + "), ";
+                
+                // now score this neighbor
+                double score = (double) numAdjoining/(double) Math.pow(countries[neighbor].getArmies(), 10);
+                
+                // if this neighbor's score is the highest we've seen
+                if (score > maxScore) {
+                    // save this as the new highest score
+                    maxScore = score;
+                    
+                    // clear any others we've saved so far,
+                    // because we only want to save the highest score (and any that tie it)
+                    // and then save this one
+                    promisingNeighbors.clear();
+                    promisingNeighbors.add(neighbor);
+                } else if (score == maxScore) {
+                    // if this neighbor's score is tied with the highest we've seen so far
+                    // save it along with the others we've saved so far, without deleting them
+                    promisingNeighbors.add(neighbor);
+                }
+            }
+        }
+        
+        testChat("findWeakestNeighborWithMostEnemyNeighbors",testMessage);
+        testChat("findWeakestNeighborWithMostEnemyNeighbors", "Promising neighbors of " + getCountryName(country) + ": " + Arrays.toString(getCountryNames(promisingNeighbors)));
+        
+        // now, in case we have any ties, we'll pick the neighbor
+        // that's owned by the strongest enemy
+        int chosenCountry = -1; // if there were no neighbors, this will remain -1
+        int highestIncome = Integer.MIN_VALUE; // we don't want to use 0 here, because it might be (???) technically possible for everyone to have a negative income if there are negative continent bonuses; although the game probably keeps the minimum at 3, I'm not sure
+        for (int neighbor : promisingNeighbors) { // loop through the list of weakest neighbors
+            int income = board.getPlayerIncome(countries[neighbor].getOwner()); // the income of the player that owns this country
+            if (income > highestIncome) { // if it's higher than the highest one we've seen so far
+                chosenCountry = neighbor; // choose this country
+                highestIncome = income; // this is the new highest income we've seen
+            }
+        }
+        
+        // if there were no valid neighbors at all, this will return -1
+        return chosenCountry;
+    }
+    // overloaded version to allow the function to be called without a blacklist;
+    // just passes a dummy arraylist as the blacklist parameter
+    protected int findWeakestNeighborWithMostEnemyNeighbors(int country) {
+        return findWeakestNeighborWithMostEnemyNeighbors(country, new ArrayList<Integer>());
     }
     
     // return array of countries (projected to be) owned by <player>
