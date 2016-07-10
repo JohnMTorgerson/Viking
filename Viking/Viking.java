@@ -112,9 +112,9 @@ public class Viking implements LuxAgent
 //            "calculateBorderStrength",
 //            "calculateIdealBorderStrength",
 //            "getAreaBonuses",
-            "calculateLandgrabObjective",
+//            "calculateLandgrabObjective",
 //            "findWeakestNeighborOwnedByStrongestEnemy",
-            "findWeakestNeighborWithMostEnemyNeighbors",
+//            "findWeakestNeighborWithMostEnemyNeighbors",
 //            "getSmartBordersArea",
 //            "calculateWipeoutObjective",
 //            "findContiguousAreas",
@@ -1100,7 +1100,7 @@ public class Viking implements LuxAgent
         int pickedPathCost = 0; // the cost of the path we'll pick
         // we want to prefer paths which run through less populated areas;
         // we'll do a rough approximation of that by calculating the enemy army density in each continent
-        // and when we're choosing between candidate paths, we'll prefer paths in countries with fewer enemy armies per country;
+        // and when we're choosing between candidate paths, we'll prefer paths in continents with fewer enemy armies per country;
         // so first we'll calculate the free army density of each continent (how many enemy armies above 1 there are per country)
         float[]continentDensity = new float[numConts]; // this array will hold the densities of all the continents on the board
         testChat("calculateLandgrabObjective", "===Continent Army Densities===");
@@ -1113,7 +1113,7 @@ public class Viking implements LuxAgent
             int numCountries = BoardHelper.getContinentSize(cont, countries); // the number of countries in this continent
             float freeArmyDensity = (float) freeArmies / (float) numCountries; // this continent's density is the number of free enemy armies / the total number of countries
             continentDensity[cont] = freeArmyDensity; // store the density in the array of all continents' densities
-            testChat("calculateLandgrabObjective", board.getContinentName(cont) + ": " + freeArmyDensity);
+//            testChat("calculateLandgrabObjective", board.getContinentName(cont) + ": " + freeArmyDensity);
         }
         // next, we'll adjust that density by adding the average density of all its neighboring continents divided by 2
         float[] adjustedContDensity = new float[numConts]; // this array will hold the adjusted densities for all the continents
@@ -1128,10 +1128,10 @@ public class Viking implements LuxAgent
             if (adjustedDensity > highestAdjustedDensity) { // if this is the highest adjusted density we've seen so far
                 highestAdjustedDensity = adjustedDensity; // save it in <highestAdjustedDensity>
             }
-            testChat("calculateLandgrabObjective", "Neighbors of " + board.getContinentName(cont) + ": " + Arrays.toString(getContinentNames(neighbors)));
+//            testChat("calculateLandgrabObjective", "Neighbors of " + board.getContinentName(cont) + ": " + Arrays.toString(getContinentNames(neighbors)));
             testChat("calculateLandgrabObjective", "Adjusted density of " + board.getContinentName(cont) + ": " + adjustedDensity);
         }
-        testChat("calculateLandgrabObjective", "highest adjusted density: " + highestAdjustedDensity);
+        testChat("calculateLandgrabObjective", "highest adjusted density: " + highestAdjustedDensity + "\n");
         // now we'll calculate a score for each path, and pick the one with the best score
         // the score accounts for:
         //   (1) the number of countries we gain by taking it over
@@ -1145,7 +1145,11 @@ public class Viking implements LuxAgent
             float oldGain;
             float enemyLoss = 0.0f; // the loss to our enemies when we take over the countries in this path
             for (int i=1; i<length; i++) { // loop through all the countries in this path except the first one (which we own)
-                gain += 1.0f - adjustedContDensity[countries[i].getContinent()] / highestAdjustedDensity; // this is the calculated value of each country designed to favor continents with fewer enemy armies around (value should be between 0.0 and 1.0)
+                if (highestAdjustedDensity > 0) {
+                    gain += 1.0f - adjustedContDensity[countries[path.get(i)].getContinent()] / highestAdjustedDensity; // this is the calculated value of each country designed to favor continents with fewer enemy armies around (value should be between 0.0 and 1.0)
+                } else { // if the highestAdjustedDensity is 0, then we just add 1 to gain (to avoid dividing by zero)
+                    gain += 1.0f;
+                }
                 enemyLoss += board.getPlayerIncome(countries[path.get(i)].getOwner()); // add the income of the owner of each country
             }
             
@@ -1170,7 +1174,8 @@ public class Viking implements LuxAgent
             }
             
             chatCountryNames("calculateLandgrabObjective", path);
-            testChat("calculateLandgrabObjective", "score: " + score);
+            testChat("calculateLandgrabObjective", "Player gain: " + gain + ", Enemy loss: " + enemyLoss);
+            testChat("calculateLandgrabObjective", "score: " + score + "\n");
         }
         
         testChat("calculateLandgrabObjective", "--- The path we're picking: --- (score: " + highestScore + ")");
