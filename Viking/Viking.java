@@ -608,10 +608,10 @@ public class Viking implements LuxAgent
 
      // turn teaming on with other Vikings
     protected void teamingOn() {
-      // populate <allies> with the names of all Viking players
+      // populate <allies> with the names of all Viking players (except ourselves)
       int numPlayersLeft = board.getNumberOfPlayersLeft();
       for (int i=0; i<numPlayersLeft; i++) {
-        if (board.getAgentName(i) == "Viking") {
+        if (board.getAgentName(i) == "Viking" && i != ID) { // if this player is a Viking and is not us
           allies.add(i); // add this Viking to allies
         }
       }
@@ -1418,14 +1418,14 @@ public class Viking implements LuxAgent
         // calculate and set score
         float guardedKeepChance = 1.0f;//(float) Math.pow((float) totalActualBorders / (float) totalIdealBorders, 0.5f);
         float gain = guardedKeepChance * (bonus + (float) area.length / 3.0f) + unguardedKeepChance * (float) Math.max(0,entryPath.length-2) / 3.0f; // <gain> is the expected increase in our income: the area bonus + the number of countries divided by 3 + any countries we'll take over on the way there divided by 3, and then multiplied by <unguardedKeepChance> (a global, arbitrary reduction to account for the probability that we won't keep these countries)
-
+		float alliedLoss = findAlliedLoss(pathAndArea); // any income loss we will cause our allies (countries we'll take over / 3 and/or any bonuses we'll knock out)
         float enemyLoss = 0.0f; // <enemyLoss> is how much we reduce the bonus of any enemies we travel through, weighted by their relative income
         for (int country : pathAndArea) { // loop through each enemy country in the (path and) area
             enemyLoss += board.getPlayerIncome(countries[country].getOwner()); // add the income of the owner of each country
         }
         enemyLoss /= 3 * getTotalEnemyIncome() + 0.00001f; // divide the total by 3, because every 3 countries is worth 1 income point, and divide by total enemy income and add a tiny fudge just in case <totalEnemyIncome> is 0
         float turns = Math.max(1, (float) cost / ((float) board.getPlayerIncome(ID) + .00001f));
-        float score = 10f * ((float) gain + enemyLoss) / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5)); // the score is our gain + the enemies' loss divided by cost and the square root of the number of turns it will take (to discourage large projects)
+        float score = 10f * ((float) gain + enemyLoss - alliedLoss) / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5)); // the score is our gain + the enemies' loss divided by cost and the square root of the number of turns it will take (to discourage large projects)
         objective.put("score", score);
 
         // calculate and set score (legacy)
@@ -1446,6 +1446,38 @@ public class Viking implements LuxAgent
 
         return objective;
     }
+	
+	// for a set of countries we're thinking of taking over
+	// return any losses to our allies that would result
+	// by counting both the allied country loss (allied countries / 3)
+	// and any continent bonuses we'd be taking away from our allies
+	protected float findAlliedLoss(int[] countryList) {
+		int alliedCountries = 0; // number of countries in countryList that is owned by an ally
+		Set<Integer> alliedContinents = new HashSet<Integer>(numConts); // set of continents that are fully owned by an ally
+		for (int country : countryList) { // loop through all the countries in our list
+			// add all the countries in the list owned by an ally
+			// the total number of which will be divided by 3 later
+			if (isInArray(countries[country].getOwner(), allies)) {
+				alliedCountries += 1;
+			}
+			// if an ally fully owns the continent this country is in
+			// add that continent to a set, which will later be used to
+			// calculate the allied bonus loss if we take over this country
+			int continent = countries[country].getContinent();
+			if (BoardHelper.anyPlayerOwnsContinent(continent, countries)) {
+				alliedContinents.add(continent);
+			}
+		}
+		// <alliedLoss> is the total allied countries divided by three,
+		// plus the sum of the owned continent bonuses.
+		float alliedLoss = 0.0f;
+		alliedLoss = alliedCountries/3.0f;
+		for (int alliedContinent : alliedContinents) {
+			alliedLoss += board.getContinentBonus(alliedContinent);
+		}
+		
+		return alliedLoss;
+	}
 
     // sort in place an arraylist of objectives
     // by the value of sortKey (only if that value is an integer)
@@ -1555,7 +1587,7 @@ public class Viking implements LuxAgent
     protected HashMap<String, Object> calculateKnockoutObjective(int continent) {
         int[] area = getCountriesInContinent(continent);
         int owner = countries[BoardHelper.getCountryInContinent(continent, countries)].getOwner(); // the owner of some country in this continent
-        if (BoardHelper.anyPlayerOwnsContinent(continent, countries) && !isInArray(owner,allies) && !battlePlanHasCountryIn(area)) { // if an enemy fully owns this continent
+        if (BoardHelper.anyPlayerOwnsContinent(continent, countries) && owner != ID && !isInArray(owner,allies) && !battlePlanHasCountryIn(area)) { // if an enemy fully owns this continent
             HashMap<String, Object> objective = new HashMap<String, Object>(); // the Objective hashmap for this continent
 
             // set objective type
