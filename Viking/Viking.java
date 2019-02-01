@@ -128,7 +128,7 @@ public class Viking implements LuxAgent
 //            "getSmartBordersArea",
 //            "calculateWipeoutObjective",
 //            "findContiguousAreas",
-            "calculateTakeoverObjective",
+//            "calculateTakeoverObjective",
             ""
         };
 
@@ -1220,40 +1220,35 @@ public class Viking implements LuxAgent
         for (ArrayList<Integer> path : candidatePaths) { // loop through all candidate paths
             // first, calculate our gain and the enemy losses from taking over the path
             int length = path.size(); // the length of the path
+            float enemyLoss = findEnemyLoss(path); // the loss to our enemies when we take over the countries in this path
+            float alliedLoss = findAlliedLoss(path); //the loss to our enemies when we take over those same countries
             float gain = 0.0f; // the value of the countries we gain
-            float oldGain;
-            float enemyLoss = 0.0f; // the loss to our enemies when we take over the countries in this path
             for (int i=1; i<length; i++) { // loop through all the countries in this path except the first one (which we own)
                 if (highestAdjustedDensity > 0) {
                     gain += 1.0f - adjustedContDensity[countries[path.get(i)].getContinent()] / highestAdjustedDensity; // this is the calculated value of each country designed to favor continents with fewer enemy armies around (value should be between 0.0 and 1.0)
                 } else { // if the highestAdjustedDensity is 0, then we just add 1 to gain (to avoid dividing by zero)
                     gain += 1.0f;
                 }
-                enemyLoss += board.getPlayerIncome(countries[path.get(i)].getOwner()); // add the income of the owner of each country
             }
 
-            oldGain = gain / 6.0f;
             gain = unguardedKeepChance * gain / 3.0f; // divide the total gain by 3, because every 3 countries is worth 1 income point, and multiply by <unguardedKeepChance>, a global (arbitrary) value that accounts for the chance that we'll keep countries unprotected by border garrisons
-            enemyLoss /= 3 * getTotalEnemyIncome() + 0.00001f; // divide the total by 3, because every 3 countries is worth 1 income point, and divide by total enemy income (and add a tiny fudge just in case <totalEnemyIncome> is 0)
 
             // then calculate the actual cost of taking over the path
             int cost = getPathCost(convertListToIntArray(path));
 
             // and the score
-            float score = 10f * (gain + enemyLoss) / ((float) cost + 0.00001f);
-            float oldScore = 10f * (oldGain + enemyLoss) / ((float) cost + 0.00001f);
+            float score = 10f * (gain + enemyLoss - alliedLoss) / ((float) cost + 0.00001f);
 
             // then compare this path's score to the highest we've seen so far
             // and if they are higher, tentatively choose this path (update <pickedPath>, <pickedPathCost> and <highestScore> to this path)
             if (score > highestScore) {
                 highestScore = score;
-                oldHighestScore = oldScore;
                 pickedPath = path;
                 pickedPathCost = cost;
             }
 
             chatCountryNames("calculateLandgrabObjective", path);
-            testChat("calculateLandgrabObjective", "Player gain: " + gain + ", Enemy loss: " + enemyLoss);
+            testChat("calculateLandgrabObjective", "Player gain: " + gain + ", eloss: " + enemyLoss + ", aloss: " + alliedLoss);
             testChat("calculateLandgrabObjective", "score: " + score + "\n");
         }
 
@@ -1283,9 +1278,7 @@ public class Viking implements LuxAgent
             // set summary string (this is just useful info for debugging)
             String summary = "landgrab  - score: ";
             String scoreStr = "" + highestScore;
-            String oldScoreStr = "" + oldHighestScore;
             summary += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
-            summary += " (old: " + (oldScoreStr.length() >= 6 ? oldScoreStr.substring(0, 6) : oldScoreStr) + ")";
             summary += " - " + getCountryName(route[0]) + "..." + getCountryName(route[route.length - 1]) + ", ";
             summary += "cost: " + pickedPathCost;
             objective.put("summary", summary);
@@ -1405,16 +1398,6 @@ public class Viking implements LuxAgent
         }
         objective.put("cost", cost);
 
-        // old cost with no borders (for testing)
-        float oldCost = 0;
-        for (int country : pathAndArea) {
-            oldCost += countries[country].getArmies();
-        }
-        oldCost *= 1.1f;
-        oldCost += pathAndArea.length;
-        int oldCostInt = (int) Math.ceil(oldCost);
-        objective.put("oldCost",oldCostInt);
-
         // calculate and set score
         float guardedKeepChance = 1.0f;//(float) Math.pow((float) totalActualBorders / (float) totalIdealBorders, 0.5f);
         float gain = guardedKeepChance * (bonus + (float) area.length / 3.0f) + unguardedKeepChance * (float) Math.max(0,entryPath.length-2) / 3.0f; // <gain> is the expected increase in our income: the area bonus + the number of countries divided by 3 + any countries we'll take over on the way there divided by 3, and then multiplied by <unguardedKeepChance> (a global, arbitrary reduction to account for the probability that we won't keep these countries)
@@ -1424,29 +1407,16 @@ public class Viking implements LuxAgent
         float score = 10f * ((float) gain + enemyLoss - alliedLoss) / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5)); // the score is our gain + the enemies' loss divided by cost and the square root of the number of turns it will take (to discourage large projects)
         objective.put("score", score);
 
-        // TEMPORARY
-        float enemyLossTEMP = 0.0f;
-        for (int country : pathAndArea) { // loop through each enemy country in the (path and) area
-             enemyLossTEMP += board.getPlayerIncome(countries[country].getOwner()); // add the income of the owner of each country
-        }
-        enemyLossTEMP /= 3 * getTotalEnemyIncome() + 0.00001f; // divide the total by 3, because every 3 countries is worth 1 income point, and divide by total enemy income and add a tiny fudge just in case <totalEnemyIncome> is 0
-        testChat("calculateTakeoverObjective", "OLD enemyLoss: " + enemyLossTEMP);
         testChat("calculateTakeoverObjective", "NEW enemyLoss: " + enemyLoss);
-
-        // calculate and set score (legacy)
-        float oldGain = (bonus + (float) area.length / 3.0f) + (float) Math.max(0,entryPath.length-2) / 6.0f;
-        float oldScore = 10f * ((float) oldGain + enemyLoss) / (((float) cost + 0.00001f) * (float) Math.pow(turns, .5));
-        objective.put("oldScore", oldScore);
 
         // set summary string (this is just useful info for debugging)
         String summary = "takeover  - score: ";
         String scoreStr = "" + score;
         summary += scoreStr.length() >= 6 ? scoreStr.substring(0, 6) : scoreStr;
-        String oldScoreStr = "" + oldScore;
-        summary += " (old: " + (oldScoreStr.length() >= 6 ? oldScoreStr.substring(0, 6) : oldScoreStr) + ")";
         summary += " - " + Arrays.toString(getContinentNames(continents)) + ", ";
         summary += "bonus: " + bonus + ", cost: " + cost;
         summary += ", keepChance: " + guardedKeepChance;
+        summary += ", eLoss: " + enemyLoss + ", aLoss: " + alliedLoss;
         objective.put("summary", summary);
 
         return objective;
@@ -1485,6 +1455,10 @@ protected float findEnemyLoss(int[] countryList) {
 
   return enemyLoss;
 }
+// overloaded version to handle arraylists
+protected float findEnemyLoss(ArrayList<Integer> countryList) {
+    return findEnemyLoss(convertListToIntArray(countryList));
+}
 
 	// for a set of countries we're thinking of taking over
 	// return any losses to our allies that would result
@@ -1518,6 +1492,10 @@ protected float findEnemyLoss(int[] countryList) {
 
 		return alliedLoss;
 	}
+  // overloaded version to handle arraylists
+  protected float findAlliedLoss(ArrayList<Integer> countryList) {
+      return findAlliedLoss(convertListToIntArray(countryList));
+  }
 
     // sort in place an arraylist of objectives
     // by the value of sortKey (only if that value is an integer)
@@ -2938,11 +2916,15 @@ protected float findEnemyLoss(int[] countryList) {
             // if <country> can attack into <neighbor> and we don't own (or plan to own) <neighbor> and it isn't in the blacklist
             if (countries[country].canGoto(neighbor) && getProjectedCountryOwner(neighbor) != ID && !isInArray(neighbor, blacklist)) {
                 int[] adjoiningList = countries[neighbor].getAdjoiningCodeList(); // get the neighbors of this neighbor
-                int numAdjoining = 0;
+                double numAdjoining = 0;
                 for (int adjoining : adjoiningList) { // loop through this neighbor's neighbors to count them
                     // if this neighbor is valid (<neighbor> can attack it, we don't own it, and it's not in the blacklist)
                     if (countries[neighbor].canGoto(adjoining) && getProjectedCountryOwner(adjoining) != ID && !isInArray(adjoining, blacklist)) {
-                        numAdjoining += 1; // then count it
+                        // then count the adjoining country
+                        // if the adjoining country is owned by an ally, however,
+                        // we want to count it less, to weakly discourage taking over allies
+                        // so we only count it as a third, instead of a whole country
+                        numAdjoining += 1.0f / (isAlly(countries[adjoining].getOwner()) ? 3.0f : 1.0f);
                     }
                 }
 
