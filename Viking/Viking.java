@@ -1069,7 +1069,8 @@ public class Viking implements LuxAgent
         HashMap<String, Object> objective = new HashMap<String, Object>();
 
         // only actually create the objective if the player doesn't have more armies than we'll probably be able to take over in a single turn
-        if (BoardHelper.getPlayerArmies(player, countries) < board.getPlayerIncome(ID)) {
+        // we also only want to wipeout enemies, not allies
+        if (BoardHelper.getPlayerArmies(player, countries) < board.getPlayerIncome(ID) && isEnemy(player)) {
 
             // set type
             objective.put("type", "wipeout");
@@ -1111,7 +1112,7 @@ public class Viking implements LuxAgent
             for (int country : totalCountriesToTake) { // loop through each enemy country in the (path and) area
                 enemyLoss += board.getPlayerIncome(countries[country].getOwner()); // add the income of the owner of each country
             }
-            enemyLoss /= 3 * getTotalEnemyIncome() + 0.00001f; // divide the total by 3, because every 3 countries is worth 1 income point, and divide by total enemy income and add a tiny fudge just in case <totalEnemyIncome> is 0
+            enemyLoss /= (3 * getTotalEnemyIncome() + 0.00001f); // divide the total by 3, because every 3 countries is worth 1 income point, and divide by total enemy income and add a tiny fudge just in case <totalEnemyIncome> is 0
             enemyLoss += cardsValue;
             float score = 10f * ((float) gain + enemyLoss) / ((float) cost + 0.00001f); // the score is our gain + the enemies' loss divided by cost and the square root of the number of turns it will take (to discourage large projects)
             objective.put("score", score);
@@ -1184,10 +1185,10 @@ public class Viking implements LuxAgent
         float[]continentDensity = new float[numConts]; // this array will hold the densities of all the continents on the board
         testChat("calculateLandgrabObjective", "===Continent Army Densities===");
         for (int cont=0; cont<numConts; cont++) { // loop through all the continents
-            int[] enemyCountries = getEnemyCountriesInContinent(ID, cont); // all the enemy countries in this continent
+            int[] foreignCountries = getForeignCountriesInContinent(ID, cont); // all the foreign countries in this continent
             int freeArmies = 0;
-            for (int enemyCountry : enemyCountries) { // loop through the enemy countries
-                freeArmies += countries[enemyCountry].getArmies() - 1; // add up all the free armies
+            for (int foreignCountry : foreignCountries) { // loop through the foreign countries
+                freeArmies += countries[foreignCountry].getArmies() - 1; // add up all the free armies
             }
             int numCountries = BoardHelper.getContinentSize(cont, countries); // the number of countries in this continent
             float freeArmyDensity = (float) freeArmies / (float) numCountries; // this continent's density is the number of free enemy armies / the total number of countries
@@ -1370,15 +1371,15 @@ public class Viking implements LuxAgent
         // it needs to succesfully prosecute those paths. that number will be more precise than this estimate,
         // but this should be close.
         int cost;
-        int[] enemyCountries = getEnemyCountriesInArea(area); // get enemy countries in the area
-        testChat("calculateTakeoverObjective", "Enemy Countries: " + Arrays.toString(enemyCountries));
+        int[] foreignCountries = getForeignCountriesInArea(area); // get foreign (owned by anyone other than us) countries in the area
+        testChat("calculateTakeoverObjective", "Enemy Countries: " + Arrays.toString(foreignCountries));
         int[] entryPath = getCheapestRouteToArea(area, false); // cheapest path to area (in case we don't own any countries); pass 'false' because we don't care about ending up at the weakest border of the area
         testChat("calculateTakeoverObjective", "Entry Path: " + Arrays.toString(entryPath));
         ArrayList<Integer> pathAndAreaList = new ArrayList<Integer>(); // new arraylist to hold the path and the countries in the area; we'll have to use an arraylist for the moment because it's easier than figuring out how big it has to be before we populate it
-        for (int i=1; i<entryPath.length - 1; i++) { // add entryPath to new arraylist, except the first element (which is a country we own, so doesn't count toward cost) and the last element (which is a country in the area, so it's already in enemyCountries)
+        for (int i=1; i<entryPath.length - 1; i++) { // add entryPath to new arraylist, except the first element (which is a country we own, so doesn't count toward cost) and the last element (which is a country in the area, so it's already in foreignCountries)
             pathAndAreaList.add(entryPath[i]);
         }
-        for (int country : enemyCountries) { // add the enemy countries in the area into the new arraylist
+        for (int country : foreignCountries) { // add the enemy countries in the area into the new arraylist
             pathAndAreaList.add(country);
         }
         int[] pathAndArea = convertListToIntArray(pathAndAreaList); // convert the arraylist into an array for use in getGlobCost(); pathAndArea now holds all the enemy countries in the area we're taking over, plus any enemy countries we have to take over to get there
@@ -3039,15 +3040,15 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
     }
 
     // helper function to return an array of the countries a player does not own in a given continent
-    protected int[] getEnemyCountriesInContinent(int owner, int cont) {
+    protected int[] getForeignCountriesInContinent(int owner, int cont) {
         // get all the countries in the continent
         int[] theCountries = getCountriesInContinent(cont);
-        // return getEnemyCountriesInArea on the list of countries
-        return getEnemyCountriesInArea(theCountries, owner);
+        // return getForeignCountriesInArea on the list of countries
+        return getForeignCountriesInArea(theCountries, owner);
     }
 
     // helper function to return an array of the countries a player does not own in a given area
-    protected int[] getEnemyCountriesInArea(int[] area, int owner) {
+    protected int[] getForeignCountriesInArea(int[] area, int owner) {
         // add all the countries not owned by owner to a new array list
         ArrayList<Integer> countryList = new ArrayList<Integer>();
         for (int country : area) {
@@ -3067,8 +3068,8 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
         return results;
     }
     // overloaded version; if no owner ID is provided, assume it is us
-    protected int[] getEnemyCountriesInArea(int[] area) {
-        return getEnemyCountriesInArea(area, ID);
+    protected int[] getForeignCountriesInArea(int[] area) {
+        return getForeignCountriesInArea(area, ID);
     }
 
     //returns true if <player> is an enemy, i.e. not self and not an ally.
