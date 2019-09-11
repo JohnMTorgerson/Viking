@@ -1179,8 +1179,8 @@ public class Viking implements LuxAgent
         float oldHighestScore = 0.0f;
         int pickedPathCost = 0; // the cost of the path we'll pick
         // we want to prefer paths which run through less populated areas;
-        // we'll do a rough approximation of that by calculating the enemy army density in each continent
-        // and when we're choosing between candidate paths, we'll prefer paths in continents with fewer enemy armies per country;
+        // we'll do a rough approximation of that by calculating the foreign army density in each continent
+        // and when we're choosing between candidate paths, we'll prefer paths in continents with fewer foreign armies per country;
         // so first we'll calculate the free army density of each continent (how many enemy armies above 1 there are per country)
         float[]continentDensity = new float[numConts]; // this array will hold the densities of all the continents on the board
         testChat("calculateLandgrabObjective", "===Continent Army Densities===");
@@ -1191,7 +1191,7 @@ public class Viking implements LuxAgent
                 freeArmies += countries[foreignCountry].getArmies() - 1; // add up all the free armies
             }
             int numCountries = BoardHelper.getContinentSize(cont, countries); // the number of countries in this continent
-            float freeArmyDensity = (float) freeArmies / (float) numCountries; // this continent's density is the number of free enemy armies / the total number of countries
+            float freeArmyDensity = (float) freeArmies / (float) numCountries; // this continent's density is the number of free foreign armies / the total number of countries
             continentDensity[cont] = freeArmyDensity; // store the density in the array of all continents' densities
 //            testChat("calculateLandgrabObjective", board.getContinentName(cont) + ": " + freeArmyDensity);
         }
@@ -1222,7 +1222,7 @@ public class Viking implements LuxAgent
             // first, calculate our gain and the enemy losses from taking over the path
             int length = path.size(); // the length of the path
             float enemyLoss = findEnemyLoss(path); // the loss to our enemies when we take over the countries in this path
-            float alliedLoss = findAlliedLoss(path); //the loss to our enemies when we take over those same countries
+            float alliedLoss = findAlliedLoss(path); // the loss to our allies when we take over those same countries
             float gain = 0.0f; // the value of the countries we gain
             for (int i=1; i<length; i++) { // loop through all the countries in this path except the first one (which we own)
                 if (highestAdjustedDensity > 0) {
@@ -1821,6 +1821,9 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
             // we will leave threat at 0, as it was initially assigned)
             if (!isInArray(owner, blacklist)) {
                 threat = Math.max(0,armies + getPlayerIncomeAndCards(owner) - armiesThusFar - currentDepth);
+                if (isAlly(owner)) {  // if we run into an ally, do not consider them a threat
+                  threat = 0;         // we still do everything else, like consider them roadblocks and add them to blacklist, and so forth
+                }
                 blacklist.add(owner); // now we've seen this owner on this path, so add it to blacklist
             }
 
@@ -3058,11 +3061,7 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
         }
 
         // copy the array list of enemy countries to an integer array
-        int size = countryList.size();
-        int[] results = new int[size];
-        for(int i=0; i<size; i++) {
-            results[i] = countryList.get(i);
-        }
+        int[] results = convertListToIntArray(countryList);
 
         // return the integer array of enemy countries
         return results;
