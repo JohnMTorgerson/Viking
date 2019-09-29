@@ -28,6 +28,10 @@ public class Viking implements LuxAgent
     // so we'll store those plans in this variable
     protected ArrayList<int[]> battlePlan;
 
+    // masterObjectiveList is a list of all possible objectives (of all types) to choose from in a given turn
+    // It will be emptied and repopulated (with newly calculated objectives) at the beginning of each turn in the place armies phase
+    protected ArrayList<HashMap> masterObjectiveList;
+
     // tells moveArmiesIn() to leave some of its armies behind
     // after successfully attacking a country. attackPhase() will calculate this number
     // so that moveArmiesIn() will know how many armies to leave behind
@@ -68,6 +72,7 @@ public class Viking implements LuxAgent
     {
         rand = new Random();
         battlePlan = new ArrayList<int[]>();
+        masterObjectiveList = new ArrayList<HashMap>();
         borderArmies = new HashMap<Integer, Integer>();
         idealBorderArmies = new HashMap<Integer, Integer>();
         smartAreas = new ArrayList<int[]>();
@@ -220,29 +225,30 @@ public class Viking implements LuxAgent
             resetBorderArmies();
         }
 
-        // this array list will hold all of the possible objectives we can pursue this turn
-        ArrayList<HashMap> objectiveList = new ArrayList<HashMap>();
+        // masterObjectiveList is a global which holds all of the possible objectives we can pursue this turn
+        // we need to clear it at the beginning of placeArmies() so it can be repopulated
+        masterObjectiveList.clear();
 
         // find and add list of objectives to knockout enemy bonuses
-        objectiveList.addAll(findKnockoutObjectives());
+        masterObjectiveList.addAll(findKnockoutObjectives());
 
         // find and add list of continent takeover objectives
-        objectiveList.addAll(findTakeoverObjectives());
+        masterObjectiveList.addAll(findTakeoverObjectives());
 
         // create and add landgrab objective
-        objectiveList.add(calculateLandgrabObjective(numberOfArmies));
+        masterObjectiveList.add(calculateLandgrabObjective(numberOfArmies));
 
         // find and add wipeout objectives
         ArrayList<HashMap> tempWipeouts = findWipeoutObjectives();
         chatObjectives("placeArmies",tempWipeouts);
-        objectiveList.addAll(tempWipeouts);
+        masterObjectiveList.addAll(tempWipeouts);
 
         // sort all the objectives by score
-        sortObjectives(objectiveList, "score");
+        sortObjectives(masterObjectiveList, "score");
 
         // display a summary of each objective for debugging purposes
-        testChat("placeArmies", "--- " + objectiveList.size() + " Possible Objectives: ---");
-        for (HashMap objective : objectiveList) {
+        testChat("placeArmies", "--- " + masterObjectiveList.size() + " Possible Objectives: ---");
+        for (HashMap objective : masterObjectiveList) {
             String summary = "";
             if (objective != null) {
                 summary = (String) objective.get("summary");
@@ -256,7 +262,7 @@ public class Viking implements LuxAgent
         // loop through all objectives in order of score
         // picking as many as we can until we're out of armies
         // and placing armies on the appropriate routes as we go
-        while (numberOfArmies > 0 && objectiveList.size() > 0) {
+        while (numberOfArmies > 0 && masterObjectiveList.size() > 0) {
             // some stuff for debugging
 //            testChat("placeArmies", "~~~~~~~~~~~ LOOP ~~~~~~~~~~~ (Armies Left: " + numberOfArmies + ")");
             int testTemp = numberOfArmies;
@@ -268,7 +274,7 @@ public class Viking implements LuxAgent
             // the first objective in the sorted list is the objective with the highest score;
             // we'll pick this objective (except in the special case that it's a knockout objective
             // that costs more than we can afford in a single turn)
-            HashMap<String, Object> objective = objectiveList.get(0);
+            HashMap<String, Object> objective = masterObjectiveList.get(0);
 
             if (objective != null) {
                 // store the type of the objective (whether it's a knockout or takeover, etc.)
@@ -290,8 +296,8 @@ public class Viking implements LuxAgent
                     } else {
                         // if the knockout is too expensive, put it in the back
                         // we will then run the loop again without reassessing the objectives.
-                        objectiveList.remove(0);
-                        objectiveList.add(objective);
+                        masterObjectiveList.remove(0);
+                        masterObjectiveList.add(objective);
                     }
                 }
                 // if the objective is a takeover
@@ -332,7 +338,7 @@ public class Viking implements LuxAgent
                 }
                 // if we got here, we don't know what this objective is, so get rid of it
                 else {
-                    objectiveList.remove(0);
+                    masterObjectiveList.remove(0);
                     testChat("placeArmies","[ERROR: UNKNOWN OBJECTIVE TYPE]");
                 }
 
@@ -351,13 +357,13 @@ public class Viking implements LuxAgent
                     // since we've made plans for this objective, we don't need to look at it again
                     // except in the case of the landgrab objective, which we want to keep and recalculate each loop even if we picked it
                     if (type != "landgrab") {
-                        objectiveList.remove(0);
+                        masterObjectiveList.remove(0);
                     }
 
                     // loop through the list of remaining objectives
                     // and recalculate them all
-                    for (int i=0; i<objectiveList.size(); i++) {
-                        HashMap<String, Object> element = objectiveList.get(i);
+                    for (int i=0; i<masterObjectiveList.size(); i++) {
+                        HashMap<String, Object> element = masterObjectiveList.get(i);
                         HashMap<String, Object> newElement = new HashMap<String, Object>(); // instantiate HashMap for recalculated objective, regardless of type
 
                         // each type uses its own creation function
@@ -375,24 +381,24 @@ public class Viking implements LuxAgent
                             newElement = calculateWipeoutObjective((Integer) element.get("playerID")); // recalculate wipeout objective by passing the player ID
                         }
                         if (newElement != null && !newElement.isEmpty()) { // if the recalculated objective isn't empty or null
-                            objectiveList.set(i, newElement); // replace the old one with it
+                            masterObjectiveList.set(i, newElement); // replace the old one with it
                         } else { // otherwise the element is null (e.g. if the knockout continent is/will be no longer owned by an enemy; i.e. we picked a path through it)
-                            objectiveList.remove(i); // remove it from the list
+                            masterObjectiveList.remove(i); // remove it from the list
                             i--; // decrement i, because all the elements moved to the left (I know, I know)
                         }
                     }
 
                     // re-sort the list
-                    sortObjectives(objectiveList, "score");
+                    sortObjectives(masterObjectiveList, "score");
                 }
             } else { // this objective doesn't exist
-                objectiveList.remove(0); // so remove it and move on to the next one
+                masterObjectiveList.remove(0); // so remove it and move on to the next one
 //                testChat("placeArmies", "[null objective]");
             }
         }
         if (numberOfArmies > 0) {
             testChat("placeArmies","Viking: We've ended placement, but we still have armies......what a schmuck.");
-            testChat("placeArmies","        number of armies: " + numberOfArmies + ", objectives left: " + objectiveList.size());
+            testChat("placeArmies","        number of armies: " + numberOfArmies + ", objectives left: " + masterObjectiveList.size());
         }
 
 //        testChat("placeArmies","--- BATTLE PLAN: ---");
@@ -1022,14 +1028,13 @@ public class Viking implements LuxAgent
     protected ArrayList<int[]> calculateSmartAreas() {
         ArrayList<int[]> areas = new ArrayList<int[]>();
 
-        // loop through all the continents to create an "objective" hashmap for each one and add it to objectiveList
+        // loop through all the continents to create an smart area for each one
         for(int continent = 0; continent < numConts; continent++) {
             // get countries in this continent
             // plus possibly some extra countries outside the continent in order to
             // reduce the number of borders necessary to defend
             int[] area = getSmartBordersArea(getCountriesInContinent(continent));
 
-            // add objective to objectiveList arraylist
             areas.add(area);
         }
         return areas;
@@ -1344,6 +1349,7 @@ public class Viking implements LuxAgent
         testChat("calculateTakeoverObjective", "Area: " + Arrays.toString(area));
 
         // set area
+        //if buddyhasContinent {area = traditionalArea}
         objective.put("area", area);
 
         // set continent bonus
