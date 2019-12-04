@@ -88,7 +88,6 @@ public class Viking implements LuxAgent
         board = theboard;
         countries = board.getCountries();
         numConts = board.getNumberOfContinents();
-        smartAreas = calculateSmartAreas();
         pathCount = 0;
         unguardedKeepChance = 1.0f / 3.0f;
     }
@@ -206,9 +205,16 @@ public class Viking implements LuxAgent
         // which happens when we wipeout an enemy and get to cash cards mid-turn;
         // in that case, we want to create a new <battlePlan> from scratch, erasing the old one
         // that attackPhase() is in the middle of, and letting it do the new one instead
-        if (initial == false && board.getTurnCount() > 1) {
+        if (initial == false) { //}) && board.getTurnCount() > 1) {
             battlePlan.clear();
         }
+
+        // calculate smart areas for the whole board at the beginning of every turn;
+        // smart areas are essentially continents with sometimes an extra country or two
+        // only if that reduces the number of borders necessary to defend it;
+        // (we recalculate at the beginning of each turn because we may not want to add
+        // those extra countries if it interferes with an ally, so it may change during gameplay)
+        smartAreas = calculateSmartAreas();
 
         // reset the global <borderArmies> HashMap, which stores the border garrison strength for each border country of each area we want to take over
         // instead of completely clearing it from the previous turn, we want to set each entry to the number of armies
@@ -1020,20 +1026,36 @@ public class Viking implements LuxAgent
         return extBordersFitness;
     }
 
-    // find the areas with smart borders that we'll use for the whole game;
+    // find the areas with smart borders that we'll use;
     // each area is based on a continent of the map, but may contain
     // extra countries outside of that continent to reduce the number of
     // borders to defend; therefore, some countries will be in
     // more than one area (but no area should have duplicates of any country)
     protected ArrayList<int[]> calculateSmartAreas() {
-        ArrayList<int[]> areas = new ArrayList<int[]>();
-
-        // loop through all the continents to create an smart area for each one
+        //create a blacklist of continents that we do not want to expand smart borders into
+        //typically because it would adversely affect an ally.
+        ArrayList<Integer> continentBlacklist = new ArrayList<Integer>();
         for(int continent = 0; continent < numConts; continent++) {
+          if (anyAllyOwnsArea(getCountriesInContinent(continent))) {
+            continentBlacklist.add(continent);
+          }
+        }
+
+        // loop through all the continents to create a smart area for each one
+        ArrayList<int[]> areas = new ArrayList<int[]>();
+        for(int continent = 0; continent < numConts; continent++) {
+            //create a country blacklist of all countries in blacklisted continents
+            //except for the one we're working on
+            ArrayList<Integer> countryBlacklist = new ArrayList<Integer>();
+            for (int blacklistContinent : continentBlacklist) {
+              if (blacklistContinent != continent) {
+                countryBlacklist.addAll(convertIntArrayToList(getCountriesInContinent(blacklistContinent)));
+              }
+            }
             // get countries in this continent
             // plus possibly some extra countries outside the continent in order to
             // reduce the number of borders necessary to defend
-            int[] area = getSmartBordersArea(getCountriesInContinent(continent));
+            int[] area = getSmartBordersArea(getCountriesInContinent(continent), convertListToIntArray(countryBlacklist));
 
             areas.add(area);
         }
@@ -3107,6 +3129,17 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
         return playerOwnsArea(area, ID);
     }
 
+    //helper function to see if any ally owns an area
+    protected boolean anyAllyOwnsArea(int[] area) {
+      for (int player : allies) {
+        if (playerOwnsArea(area, player)) {
+          return true;
+        }
+      }
+      return false;
+
+    }
+
     // helper function to return the summary magnitude of all continent bonuses completely contained within <area>
     // we should never have duplicate countries in an area,
     // but note that this function will not work if there are duplicate countries
@@ -3214,7 +3247,9 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
     // when passed an area, will see if it can reduce the number of borders
     // that have to be defended by adding countries to the area (but not removing any)
     // returns a new area with the added countries included
-    protected int[] getSmartBordersArea(int[] originalArea) {
+    // avoids expanding into blacklisted countries
+    // (e.g., blacklisted countries may be countries that are important to an ally (i.e. in one of their continents))
+    protected int[] getSmartBordersArea(int[] originalArea, int[] blacklist) {
         // testing stuff
         String areaName = board.getContinentName(getAreaContinentIDs(originalArea)[0]);
         testChat("getSmartBordersArea", "========== SMART BORDERS FOR " + areaName + " ==========");
@@ -3252,10 +3287,11 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
 
             // create new layer
             // add all the countries one layer out from each border country to <addedCountries>, ignoring duplicates
+
             for (int country : lastLayerBorders) { // loop through original borders
                 int[] neighbors = BoardHelper.getAttackList(countries[country], countries); // get neighbors of this border country
                 for (int neighbor : neighbors) { // loop through each neighbor
-                    if (!isInArray(neighbor,originalAreaList) && !isInArray(neighbor, addedCountries)) { // if this neighbor is not in the original area or in any of the new layers (including the one we're creating now—we don't want duplicates)
+                    if (!isInArray(neighbor, originalAreaList) && !isInArray(neighbor, addedCountries) && !isInArray(neighbor, blacklist)) { // if this neighbor is not in the original area or in any of the new layers (including the one we're creating now—we don't want duplicates) or the blacklist
                         addedCountries.add(neighbor); // add it to <addedCountries>
                     }
                 }
@@ -3308,6 +3344,11 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
 
         // convert the area we picked to an int[] and return it
         return convertListToIntArray(pickedArea);
+    }
+
+    //overloaded version to make blacklist optional
+    protected int[] getSmartBordersArea(int[] originalArea) {
+      return getSmartBordersArea(originalArea, new int[0]);
     }
 
     // called by getSmartBordersArea()
@@ -3492,6 +3533,15 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
     protected int[] convertListToIntArray(Set<Integer> set) {
         ArrayList<Integer> list = new ArrayList<Integer>(set);
         return convertListToIntArray(list);
+    }
+
+    //returns an integer arraylist with the same contents as the original int array
+    protected ArrayList<Integer> convertIntArrayToList(int[] array) {
+      ArrayList<Integer> list = new ArrayList<Integer>();
+      for (int element : array) {
+        list.add(element);
+      }
+      return list;
     }
 
     // returns the key that contains the lowest value in a HashMap<Integer, Integer>
