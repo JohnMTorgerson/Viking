@@ -1789,7 +1789,10 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
             // so we never have to add more than that much of our income at once
             // in order to keep the border garrison requirements from being out of control
             // but the garrison will be allowed to grow each turn until it reaches the ideal value
-            strength = (int) Math.ceil(Math.min(idealStrength * areaValue,  (double) income / 2));//extantArmies + incomePortion)); <-- commenting out the incremental limit for now because it doesn't work very well; we'll come back to it
+
+            // reevaluate above comment block at some point ^^ if we keep this change
+            strength = (int) Math.ceil(Math.min(idealStrength,  (double) income / 2));
+//            strength = (int) Math.ceil(Math.min(idealStrength * areaValue,  (double) income / 2));//extantArmies + incomePortion)); <-- commenting out the incremental limit for now because it doesn't work very well; we'll come back to it
 
             testChat("calculateBorderStrength", "Border strength of " + countries[country].getName() + " is " + strength);
         }
