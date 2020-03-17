@@ -153,6 +153,12 @@ public class Viking implements LuxAgent
     // PHASE 2: Once every continent is either full or has more than one owner (who isn't an ally)
     //          ...we don't know yet what we'll do here
     public int pickCountry() {
+      // turn teaming on during every pick country turn,
+      //because doing so only on the first turn will fail to find potential allies
+      // who have not yet had a turn; passing 'false' tells it not to make an announcement to the user
+      // so we don't do it multiple times
+      teamingOn(false);
+
       // will be the country we pick; if -1 is passed to the game, it will pick a random country for us
       int pickedCountry = -1;
 
@@ -760,7 +766,7 @@ public class Viking implements LuxAgent
           if (text.equals("viking status") || text.equals("viking team status") || text.equals("viking teaming status")) {
             if (isSpokesperson()) {
               if (isTeaming()) {
-                board.sendChat("Vikings are teaming with other Vikings");
+                board.sendChat("Viking is teaming with other Vikings");
               } else {
                 board.sendChat("Vikings are NOT teaming");
               }
@@ -776,23 +782,31 @@ public class Viking implements LuxAgent
      */
 
      // turn teaming on with other Vikings
-    protected void teamingOn() {
+    protected void teamingOn(boolean announce) {
       // populate <allies> with the names of all Viking players (except ourselves)
       int numPlayersLeft = board.getNumberOfPlayersLeft();
       for (int i=0; i<numPlayersLeft; i++) {
         if (board.getAgentName(i) == "Viking" && i != ID) { // if this player is a Viking and is not us
-          allies.add(i); // add this Viking to allies
+          if (!isInArray(i,allies)) { // also if this player isn't already in the list
+            allies.add(i); // add this Viking to allies
+          }
         }
       }
       // if we're the spokesperson, chat that teaming is on
-      if (isSpokesperson()) board.sendChat("Viking is teaming with Viking");
+      if (announce && isSpokesperson()) board.sendChat("Viking is teaming with other Vikings");
+    }
+    protected void teamingOn() {
+      teamingOn(true);
     }
 
     // turn teaming off
-    protected void teamingOff() {
+    protected void teamingOff(boolean announce) {
       allies.clear(); // clear list of allies
       // if we're the spokesperson, chat that teaming is off
-      if (isSpokesperson()) board.sendChat("Viking is no longer teaming");
+      if (announce && isSpokesperson()) board.sendChat("Viking is no longer teaming");
+    }
+    protected void teamingOff() {
+      teamingOff(true);
     }
 
     protected boolean isTeaming() {
