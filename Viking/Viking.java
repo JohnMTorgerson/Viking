@@ -154,9 +154,9 @@ public class Viking implements LuxAgent
     //          ...we don't know yet what we'll do here
     public int pickCountry() {
       // turn teaming on during every pick country turn,
-      //because doing so only on the first turn will fail to find potential allies
+      // because doing so only on the first turn will fail to find potential allies
       // who have not yet had a turn; passing 'false' tells it not to make an announcement to the user
-      // so we don't do it multiple times
+      // so we don't do that multiple times
       teamingOn(false);
 
       // will be the country we pick; if -1 is passed to the game, it will pick a random country for us
@@ -228,11 +228,11 @@ public class Viking implements LuxAgent
             length = theseCountries.length;
             break; // each element should be the same length, so we only need to check one of them
           }
-          //If there are no unowned countries, we won't do anything, continent is spoken for.
+          // If there are no unowned countries, we won't do anything, continent is spoken for.
           if (unownedCountries.size() > 0) {
             cont.put("countries", convertListToIntArray(unownedCountries));
 
-            //int[] unownedCountriesArray = convertListToIntArray(unownedCountries);
+            // int[] unownedCountriesArray = convertListToIntArray(unownedCountries);
             // if the list of unowned countries in this continent is shorter than the shortest ones we've checked so far,
             // delete them all from the list (P1Continents) and put this one in their place
             if (unownedCountries.size() < length) {
@@ -249,11 +249,14 @@ public class Viking implements LuxAgent
 
       testChat("pickCountry","--------------------------");
 
+      // Now, in the event of a tie (multiple continents with the same number of unowned countries left),
+      // we have to score them by adding the benifit of us possibly getting the bonus
+      // and value of us keeping an enemy from getting the bonus
+      // and choosing the one with the highest score to pick a country in
       double bestScore = 0.0d;
       HashMap<String,Object> pickedCont = new HashMap<String,Object>();
+      // loop through our list of continents with the least (non-zero) owned countries
       for (HashMap continent : P1Continents) {
-//      for (int i=0; i<P1Continents.size(); i++) {
-//        HashMap<String,Object> continent = P1Continents.get(i);
         double score = 0.0d;
         int[] unownedCountries = (int[]) continent.get("countries");
         int numCountries = unownedCountries.length;
@@ -266,11 +269,11 @@ public class Viking implements LuxAgent
         // if the only owner of any countries in this continent is an enemy, or else if no one yet owns any countries in this continent
         if (isEnemy(owner) || owner == -1) {
           // add the continent bonus divided by the number of enemies to the score,
-          // because taking a country in this continent could keep one of them from getting its bonus
+          // because taking a country in this continent would keep one of them from getting its bonus
           int numEnemies = getEnemies().length;
           // divide the bonus by the number of enemies to account for proportionality
           // if Viking isn't the last to go, not every player will be found by the getEnemies() function
-          // as it appears that the players don't appear until their first placement turn
+          // since it looks like the players don't appear until their first placement turn
           // in which case numEnemies might be 0. In that case, we just fudge it to a 1
           // which will change the score a bit, but only on the first turn, so whatever
           score += (double) bonus / (double) Math.max(1,numEnemies);
@@ -290,7 +293,7 @@ public class Viking implements LuxAgent
       // now pick a country in the continent we picked
       if (pickedCont != null && pickedCont.containsKey("countries")) { // if an ally has a country in all the continents, the scores could all be zero, in which case pickedCont would be an empty hashmap. This should never happen, but just in case...
         int[] possibleCountries = (int[]) pickedCont.get("countries");
-        return possibleCountries[ rand.nextInt(possibleCountries.length) ];
+        return possibleCountries[ rand.nextInt(possibleCountries.length) ]; // choose a random country in the continent we picked
       }
       return -1; // we shouldn't get here unless something went wrong
     }
