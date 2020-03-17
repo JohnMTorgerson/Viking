@@ -109,8 +109,9 @@ public class Viking implements LuxAgent
 
     protected void testChat(String topic, String message) {
         String[] topics = {
+              "pickCountry",
 //            "placeInitialArmies",
-            "placeArmies",
+//            "placeArmies",
 //            "attackPhase",
 //            "moveArmiesIn",
 //            "fortifyPhase",
@@ -144,9 +145,153 @@ public class Viking implements LuxAgent
         }
     }
 
-    // pick initial countries at the beginning of the game. We will do this later.
+    // pick initial countries at the beginning of the game.
+    // PHASE 1: Keep enemies from getting bonuses, (and possibly get some ourselves):
+    //          pick a country in a continent with 0 or 1 owners (either us or an enemy, but not an ally)
+    //          preferring continents with the fewest unowned countries
+    //          in the event of a tie, weighting advantage for us vs disadvantage to the enemy
+    // PHASE 2: Once every continent is either full or has more than one owner (who isn't an ally)
+    //          ...we don't know yet what we'll do here
     public int pickCountry() {
-        return -1;
+      // will be the country we pick; if -1 is passed to the game, it will pick a random country for us
+      int pickedCountry = -1;
+
+      // ---- PHASE 1 ---- //
+      pickedCountry = pickCountryPhase1();
+      // after each continent is either full, has multiple owners, or is solely occupied by an ally
+      // then phase 1 is over, and pickedCountry will remain -1 to this point, where phase 2 will take over
+
+      // ---- PHASE 2 ---- //
+      if (pickedCountry == -1) { // if pickedCountry is anything besides -1 here, then phase 1 picked a country, so do nothing
+        pickedCountry = pickCountryPhase2();
+      }
+
+      return pickedCountry;
+    }
+
+    protected int pickCountryPhase1() {
+      ArrayList<HashMap> P1Continents = new ArrayList<HashMap>();
+      // loop through all continents
+      for(int continent = 0; continent < numConts; continent++) {
+        // information (for this continent) to be saved in P1Continents
+        HashMap<String, Object> cont = new HashMap<String, Object>();
+        cont.put("id", continent);
+
+        // for phase 1, we only care about keeping enemies from owning continents with positive bonuses
+        // so we simply skip any continent with a zero or negative bonus
+        if (board.getContinentBonus(continent) <= 0) {
+          continue;
+        }
+
+        HashSet<Integer> owners = new HashSet<Integer>();
+        int numUnownedCountries = 0;
+        int[] contCountries = getCountriesInContinent(continent);
+        ArrayList<Integer> unownedCountries = new ArrayList<Integer>();
+        // loop through all countries in that continent
+        for (int country : contCountries) {
+          int owner = countries[country].getOwner();
+          // if nobody owns it
+          if (owner == -1) {
+            numUnownedCountries++;
+            unownedCountries.add(country);
+          }
+          else {
+            // somebody owns it, add that owner to the set of owners (which won't allow duplicates, which is what we want)
+            owners.add(owner);
+          }
+        }
+        // convert set to arraylist in order to be able to grab the first element (if there is one)
+        ArrayList<Integer> ownersList = new ArrayList<Integer>();
+        for (int owner : owners) {
+          ownersList.add(owner);
+        }
+        // if there are 1 or 0 owners and none of those owners is an ally
+        // then it's a continent we're interested in for phase 1
+        if (ownersList.size() < 2 && (ownersList.size() == 0 || !isAlly(ownersList.get(0)))) {
+          // if someone owns any countries in this continent
+          if (ownersList.size() > 0) {
+            cont.put("owner", ownersList.get(0)); // save that owner in our 'cont' hashmap
+          }
+          else {
+            cont.put("owner", -1); // the continent is empty, so we save the owner as -1
+          }
+
+          int length = Integer.MAX_VALUE;
+          for (HashMap<String,Object> thisCont : P1Continents) {
+            int[] theseCountries = (int[]) thisCont.get("countries");
+            length = theseCountries.length;
+            break; // each element should be the same length, so we only need to check one of them
+          }
+          //If there are no unowned countries, we won't do anything, continent is spoken for.
+          if (unownedCountries.size() > 0) {
+            cont.put("countries", convertListToIntArray(unownedCountries));
+
+            //int[] unownedCountriesArray = convertListToIntArray(unownedCountries);
+            // if the list of unowned countries in this continent is shorter than the shortest ones we've checked so far,
+            // delete them all from the list (P1Continents) and put this one in their place
+            if (unownedCountries.size() < length) {
+              P1Continents.clear();
+              P1Continents.add(cont);
+            }
+            // if this one is the same length as the shortest ones we've found so far, add it alongside them
+            else if (unownedCountries.size() == length) {
+              P1Continents.add(cont);
+            } // if this one is longer than the shortest ones, do nothing, we don't care about it for phase 1
+          }
+        }
+      }
+
+      testChat("pickCountry","--------------------------");
+
+      double bestScore = 0.0d;
+      HashMap<String,Object> pickedCont = new HashMap<String,Object>();
+      for (HashMap continent : P1Continents) {
+//      for (int i=0; i<P1Continents.size(); i++) {
+//        HashMap<String,Object> continent = P1Continents.get(i);
+        double score = 0.0d;
+        int[] unownedCountries = (int[]) continent.get("countries");
+        int numCountries = unownedCountries.length;
+        int bonus = board.getContinentBonus((Integer) continent.get("id"));
+        int owner = (Integer) continent.get("owner");
+        // if the only owner of any countries in this continent is us, or else if no one yet owns any countries in this continent
+        if (owner == ID || owner == -1) {
+          score += (double) bonus; // add the continent bonus to the score, because we can still potentially get this continent ourselves
+        }
+        // if the only owner of any countries in this continent is an enemy, or else if no one yet owns any countries in this continent
+        if (isEnemy(owner) || owner == -1) {
+          // add the continent bonus divided by the number of enemies to the score,
+          // because taking a country in this continent could keep one of them from getting its bonus
+          int numEnemies = getEnemies().length;
+          // divide the bonus by the number of enemies to account for proportionality
+          // if Viking isn't the last to go, not every player will be found by the getEnemies() function
+          // as it appears that the players don't appear until their first placement turn
+          // in which case numEnemies might be 0. In that case, we just fudge it to a 1
+          // which will change the score a bit, but only on the first turn, so whatever
+          score += (double) bonus / (double) Math.max(1,numEnemies);
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          pickedCont = continent;
+        }
+
+        continent.put("bonus",bonus);
+        continent.put("score",score);
+
+        chatObjectives("pickCountry", continent);
+      }
+
+      // now pick a country in the continent we picked
+      if (pickedCont != null && pickedCont.containsKey("countries")) { // if an ally has a country in all the continents, the scores could all be zero, in which case pickedCont would be an empty hashmap. This should never happen, but just in case...
+        int[] possibleCountries = (int[]) pickedCont.get("countries");
+        return possibleCountries[ rand.nextInt(possibleCountries.length) ];
+      }
+      return -1; // we shouldn't get here unless something went wrong
+    }
+
+    // phase 2 of pickCountry... we don't know what we'll put here yet
+    protected int pickCountryPhase2() {
+      return -1;
     }
 
     // place initial armies at the beginning of the game
@@ -602,12 +747,24 @@ public class Viking implements LuxAgent
         // if it wasn't a Viking that chatted it
         if (!chatData.get(0).toString().equals("Viking (AI)")) {
           String text = (String) chatData.get(1);
+          text = text.toLowerCase(); // to make it not case sensitive
           // for these commands, empty the list of allies to stop teaming with anyone
-          if (text.equals("viking alone") || text.equals("viking team off")) {
+          if (text.equals("viking alone") || text.equals("viking team off") || text.equals("viking teaming off")) {
             teamingOff();
           }
-          if (text.equals("viking together") || text.equals("viking team on")) {
+          // turn teaming on (with other Vikings)
+          if (text.equals("viking together") || text.equals("viking team on") || text.equals("viking teaming on")) {
             teamingOn();
+          }
+          // report teaming status
+          if (text.equals("viking status") || text.equals("viking team status") || text.equals("viking teaming status")) {
+            if (isSpokesperson()) {
+              if (isTeaming()) {
+                board.sendChat("Vikings are teaming with other Vikings");
+              } else {
+                board.sendChat("Vikings are NOT teaming");
+              }
+            }
           }
         }
       }
@@ -636,6 +793,10 @@ public class Viking implements LuxAgent
       allies.clear(); // clear list of allies
       // if we're the spokesperson, chat that teaming is off
       if (isSpokesperson()) board.sendChat("Viking is no longer teaming");
+    }
+
+    protected boolean isTeaming() {
+      return allies.size() > 0;
     }
 
     // will loop through all players (not just players left) and choose one Viking to be the spokesperson
@@ -2797,7 +2958,7 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
             Object value = objective.get(key);
             String stringValue = objectToString(value);
 
-            if (key == "continentID") {
+            if (key == "continentID" || key == "id") {
                 message += "continent: " + board.getContinentName((Integer) value) + "\n";
             } else if (key == "continentIDs") {
                 message += "continents: " + Arrays.toString(getContinentNames((int[]) value)) + "\n";
@@ -2822,7 +2983,7 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
         if (value instanceof String) {
             return (String) value;
         }
-        if (value instanceof Integer || value instanceof Float) {
+        if (value instanceof Integer || value instanceof Float || value instanceof Double) {
             return "" + value;
         }
         if (value instanceof int[]) {
@@ -3116,6 +3277,17 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
           return true;
        }
        return false;
+    }
+
+    protected int[] getEnemies() {
+      ArrayList<Integer> enemies = new ArrayList<Integer>();
+      int numberOfPlayers = board.getNumberOfPlayers(); // number of players that started the game
+      for (int player=0; player<numberOfPlayers; player++) { // loop through all players
+          if (BoardHelper.playerIsStillInTheGame(player, countries) && isEnemy(player)) { // if the player is still in the game, and is an enemy
+              enemies.add(player);
+          }
+      }
+      return convertListToIntArray(enemies);
     }
 
     // returns true if <player> owns every country in <area>
