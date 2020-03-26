@@ -115,9 +115,9 @@ public class Viking implements LuxAgent
         String[] topics = {
 //            "pickCountry",
 //            "pickCountryPhase1",
-              "pickCountryPhase2",
+//            "pickCountryPhase2",
 //            "placeInitialArmies",
-//            "placeArmies",
+            "placeArmies",
 //            "attackPhase",
 //            "moveArmiesIn",
 //            "fortifyPhase",
@@ -1845,8 +1845,43 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
                 }
             }
         }
-        // if the values at sortKey are floats or doubles
-        else if (someElement != null && (someElement.get(sortKey) instanceof Float || someElement.get(sortKey) instanceof Double)) {
+        // if the values at sortKey are floats
+        else if (someElement != null && someElement.get(sortKey) instanceof Float) {
+            // bubble-sort the arraylist by the value of sortKey
+            boolean flag = true;
+            HashMap temp = new HashMap();
+            float v1, v2;
+            HashMap<String, Object> thisObj = new HashMap<String, Object>();
+            HashMap<String, Object> nextObj = new HashMap<String, Object>();
+            int size = list.size();
+            while(flag) {
+                flag = false;
+                for (int i=0; i<size-1; i++) {
+                    thisObj = list.get(i); // the element we're on
+                    nextObj = list.get(i+1); // the next element, to compare it to
+
+                    if (thisObj != null && thisObj.containsKey(sortKey)) { // if this element has the sortKey
+                        v1 = (Float) thisObj.get(sortKey); // assign the sortKey value to v1
+                    } else { // and if it doesn't
+                        v1 = -Float.MAX_VALUE; // assign v1 the lowest possible value, so this element will be moved to the end
+                    }
+                    if (nextObj != null && nextObj.containsKey(sortKey)) { // if the next element has the sortKey
+                        v2 = (Float) nextObj.get(sortKey); // assign the sortKey value to v2
+                    } else { // and if it doesn't
+                        v2 = -Float.MAX_VALUE; // assign v2 the lowest possible value
+                    }
+
+                    if (v1 < v2) {
+                        temp = list.get(i); // store the value at i
+                        list.remove(i); // remove the ith element, and everything after it shifts to the left
+                        list.add(i+1,temp); // insert the original ith element at i+1, and everything after it shifts to the right
+                        flag = true;
+                    }
+                }
+            }
+        }
+        // if the values at sortKey are doubles
+        else if (someElement != null && someElement.get(sortKey) instanceof Double) {
             // bubble-sort the arraylist by the value of sortKey
             boolean flag = true;
             HashMap temp = new HashMap();
