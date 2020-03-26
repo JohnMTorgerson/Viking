@@ -113,7 +113,9 @@ public class Viking implements LuxAgent
 
     protected void testChat(String topic, String message) {
         String[] topics = {
-              "pickCountry",
+//            "pickCountry",
+//            "pickCountryPhase1",
+              "pickCountryPhase2",
 //            "placeInitialArmies",
 //            "placeArmies",
 //            "attackPhase",
@@ -254,7 +256,7 @@ public class Viking implements LuxAgent
         }
       }
 
-      testChat("pickCountry","--------------------------");
+      testChat("pickCountryPhase1","--------------------------");
 
       // Now, in the event of a tie (multiple continents with the same number of unowned countries left),
       // we have to score them by adding the benifit of us possibly getting the bonus
@@ -294,7 +296,7 @@ public class Viking implements LuxAgent
         continent.put("bonus",bonus);
         continent.put("score",score);
 
-        chatObjectives("pickCountry", continent);
+        chatObjectives("pickCountryPhase1", continent);
       }
 
       // now pick a country in the continent we picked
@@ -307,7 +309,82 @@ public class Viking implements LuxAgent
 
     // phase 2 of pickCountry... we don't know what we'll put here yet
     protected int pickCountryPhase2() {
-      return -1;
+      ArrayList<HashMap> P2Continents = new ArrayList<HashMap>();
+      // loop through all continents
+      for(int continent = 0; continent < numConts; continent++) {
+        // information (for this continent) to be saved in P2Continents
+        HashMap<String, Object> cont = new HashMap<String, Object>();
+        cont.put("id", continent);
+
+        HashSet<Integer> owners = new HashSet<Integer>();
+        int numUnownedCountries = 0;
+        int numOurCountries = 0;
+        int[] contCountries = getCountriesInContinent(continent);
+        ArrayList<Integer> unownedCountries = new ArrayList<Integer>();
+        // loop through all countries in that continent
+        for (int country : contCountries) {
+          int owner = countries[country].getOwner();
+          // if nobody owns it
+          if (owner == -1) {
+            numUnownedCountries++;
+            unownedCountries.add(country);
+          }
+          else {
+            // somebody owns it, add that owner to the set of owners (which won't allow duplicates, which is what we want)
+            owners.add(owner);
+
+            // also, add up the number of countries we own in this continent for scoring purposes
+            if (owner == ID) {
+              numOurCountries++;
+            }
+          }
+        }
+        // convert set to arraylist in order to be able to grab the first element (if there is one)
+        ArrayList<Integer> ownersList = new ArrayList<Integer>();
+        for (int owner : owners) {
+          ownersList.add(owner);
+        }
+        // As long as this continent isn't solely owned by an ally
+        // and it has at least one unowned country, then it's a candidate
+        // so we just need to give it a score
+        if (!(ownersList.size() == 1 && isAlly(ownersList.get(0))) && unownedCountries.size() > 0) {
+          cont.put("countries", convertListToIntArray(unownedCountries));
+          int totalCountries = BoardHelper.getContinentSize((Integer) cont.get("id"), countries); // total number of countries in this continent
+          int numBorders = BoardHelper.getContinentBorders((Integer) cont.get("id"), countries).length; // number of borders this continent has, for scoring purposes; even though we're using smart Areas in the actual game, this is a good enough approximation for now
+          int bonus = board.getContinentBonus((Integer) cont.get("id")); // this continent's bonus
+
+          // score weighs bonus vs number of total countries,
+          // and also considers how many countries we already own as a percentage of total countries
+          double score = (double) bonus / (double) numBorders * (numOurCountries + 0.0001d) / (double) totalCountries;
+          cont.put("score", score); // add score to cont object so that we can sort P2Continents by score
+          cont.put("countries", convertListToIntArray(unownedCountries)); // add unowned countries
+          cont.put("bonus",bonus);
+          cont.put("borders",numBorders);
+          cont.put("totalCountries",totalCountries);
+          cont.put("ourCountries",numOurCountries);
+          cont.put("unownedCountries", numUnownedCountries);
+          P2Continents.add(cont);
+        }
+      }
+
+      // sort list of candidate continents by score
+      sortObjectives(P2Continents, "score");
+      chatObjectives("pickCountryPhase2", P2Continents);
+
+      // pick a random country in the highest-scoring continent
+      if (P2Continents.size() > 0) { // if there are any candidate continents
+        int[] bestContCountries = (int[]) P2Continents.get(0).get("countries");
+        int country = bestContCountries[ rand.nextInt(bestContCountries.length) ];
+
+        // return that country to the board
+        return country;
+      } else {
+        // we'll get here if P2Continents is empty
+        // this will happen if the only open continents are solely owned by an ally, for example
+        // in this case, we return -1, letting the game choose a country for us in one of those continents,
+        // because we're lazy (and we don't have to take responsibility for screwing over our buddy, the game made us do it)
+        return -1;
+      }
     }
 
     // place initial armies at the beginning of the game
@@ -1768,12 +1845,12 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
                 }
             }
         }
-        // if the values at sortKey are floats
-        else if (someElement != null && someElement.get(sortKey) instanceof Float) {
+        // if the values at sortKey are floats or doubles
+        else if (someElement != null && (someElement.get(sortKey) instanceof Float || someElement.get(sortKey) instanceof Double)) {
             // bubble-sort the arraylist by the value of sortKey
             boolean flag = true;
             HashMap temp = new HashMap();
-            float v1, v2;
+            double v1, v2;
             HashMap<String, Object> thisObj = new HashMap<String, Object>();
             HashMap<String, Object> nextObj = new HashMap<String, Object>();
             int size = list.size();
@@ -1784,14 +1861,14 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
                     nextObj = list.get(i+1); // the next element, to compare it to
 
                     if (thisObj != null && thisObj.containsKey(sortKey)) { // if this element has the sortKey
-                        v1 = (Float) thisObj.get(sortKey); // assign the sortKey value to v1
+                        v1 = (Double) thisObj.get(sortKey); // assign the sortKey value to v1
                     } else { // and if it doesn't
-                        v1 = -Float.MAX_VALUE; // assign v1 the lowest possible value, so this element will be moved to the end
+                        v1 = -Double.MAX_VALUE; // assign v1 the lowest possible value, so this element will be moved to the end
                     }
                     if (nextObj != null && nextObj.containsKey(sortKey)) { // if the next element has the sortKey
-                        v2 = (Float) nextObj.get(sortKey); // assign the sortKey value to v2
+                        v2 = (Double) nextObj.get(sortKey); // assign the sortKey value to v2
                     } else { // and if it doesn't
-                        v2 = -Float.MAX_VALUE; // assign v2 the lowest possible value
+                        v2 = -Double.MAX_VALUE; // assign v2 the lowest possible value
                     }
 
                     if (v1 < v2) {
