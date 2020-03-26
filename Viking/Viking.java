@@ -143,10 +143,12 @@ public class Viking implements LuxAgent
             ""
         };
 
+        String name = "(" + board.getPlayerName(ID).toUpperCase() + ") ";
+
         for (int i=0; i<topics.length; i++) {
             if (topic == topics[i]) {
-                board.sendChat(message);
-                //System.out.println(message);
+                board.sendChat(name + message);
+                //System.out.println(name + message);
             }
         }
     }
@@ -416,6 +418,7 @@ public class Viking implements LuxAgent
     // this is useful because there are a few behaviors that need to be different in that case
     public void placeArmies(int numberOfArmies, boolean initial) {
         testChat("placeArmies",
+                 "\n============" + board.getPlayerName(ID).toUpperCase() + "============" +
                  "\n**********************************************" +
                  "\n**********************************************" +
                  "\n**************** PLACE ARMIES ****************" +
@@ -423,26 +426,30 @@ public class Viking implements LuxAgent
                  "\n**********************************************" +
                  "\n Turn: " + board.getTurnCount() + " - Our income: " + board.getPlayerIncome(ID) + " - Total enemy income: " + getTotalEnemyIncome());
 
-        int playersLeft = board.getNumberOfPlayersLeft();
-        for (int i=0; i<playersLeft; i++) {
-          if (isAlly(i)) {
-            testChat("placeArmies", "Player " + board.getPlayerName(i) + " is in allies.");
-          }
-          else {
-            testChat("placeArmies", "Player " + board.getPlayerName(i) + " is not in allies.");
-          }
-        }
-
         // on the first turn, if the user hasn't previously turned teaming off
         // (in which case the isTeamingOn boolean will be false)
         // turn teaming on (and announce it to the users by not passing 'false')
         // if pickCountry() or placeInitialArmies() has been run,
         // this will already have been done; but if the game is set to
-        // random countries and random armies, those functions will not have been executed
+        // random countries and random armies (or a starting scenario),
+        // those functions will not have been executed
         // and the game will simply start here.
         // for that reason we need to turn teaming on here as well
         if (board.getTurnCount() == 1 && isTeamingOn) {
           teamingOn();
+        }
+
+        // output teaming information for testing purposes
+        int playersTotal = board.getNumberOfPlayers();
+        for (int i=0; i<playersTotal; i++) {
+          if (BoardHelper.playerIsStillInTheGame(i, countries)) {
+            if (isAlly(i)) {
+              testChat("placeArmies", "Player " + board.getPlayerName(i) + " is in allies.");
+            }
+            else {
+              testChat("placeArmies", "Player " + board.getPlayerName(i) + " is not in allies.");
+            }
+          }
         }
 
         // the <initial> boolean is a flag that tells us if this function
