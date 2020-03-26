@@ -652,9 +652,42 @@ public class Viking implements LuxAgent
 //                testChat("placeArmies", "[null objective]");
             }
         }
+        // if we ran out of objectives, but we still have armies left
+        // we'll just evenly distribute the remaining armies onto the first country
+        // in each path of battlePlan
         if (numberOfArmies > 0) {
-            testChat("placeArmies","Viking: We've ended placement, but we still have armies......what a schmuck.");
-            testChat("placeArmies","        number of armies: " + numberOfArmies + ", objectives left: " + masterObjectiveList.size());
+          testChat("placeArmies","Viking: We've ended placement, but we still have armies......what a schmuck.");
+          testChat("placeArmies","            number of armies: " + numberOfArmies + ", objectives left: " + masterObjectiveList.size());
+
+          // loop through all the paths in battle plan to find the "original" paths, i.e. the ones that aren't forks
+          ArrayList<Integer> theCountries = new ArrayList<Integer>();
+//          for (int[] path : battlePlan) {
+          for (int i=0; i<battlePlan.size();i++) {
+            int[] path = battlePlan.get(i);
+            // if we own the first country in this path, then it's an original path
+            // (as opposed to a fork), and if the path has more than one country in it
+            // then it's a meaningful path (i.e. one that will actually involve attacking something)
+            // so it's one we'll add to the list of countries we're going to place armies on
+            if (countries[path[0]].getOwner() == ID && path.length > 1) {
+              theCountries.add(path[0]);
+              testChat("placeArmies", "            battlePlan path " + i + ": " + Arrays.toString(getCountryNames(path)));
+            }
+          }
+          // the amount to place on each country;
+          // we divide the total armies we have by the number of countries
+          // and then round up
+          int armiesForEach = numberOfArmies / theCountries.size() + ((numberOfArmies % theCountries.size() == 0) ? 0 : 1); // the second addend here basically accomplishes Math.ceil() but for integers, i.e. it rounds up, whereas integer division by itself always rounds down. see https://stackoverflow.com/questions/7139382/java-rounding-up-to-an-int-using-math-ceil
+          int armiesLeft = numberOfArmies;
+
+          // loop through the countries and throw those armies down
+          for (int country : theCountries) {
+            int armiesToPlace = Math.min(armiesForEach,armiesLeft);
+
+            testChat("placeArmies", "            Placing " + armiesToPlace + " excess armies on " + getCountryName(country));
+
+            board.placeArmies(armiesToPlace, country);
+            armiesLeft -= armiesToPlace;
+          }
         }
 
 //        testChat("placeArmies","--- BATTLE PLAN: ---");
