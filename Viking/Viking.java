@@ -71,6 +71,10 @@ public class Viking implements LuxAgent
     // to remember whether teaming is on or off; will be on by default, but if the user turns it off, we'll need to know that in a few different places
     protected boolean isTeamingOn;
 
+    //to remember whether we've introduced ourselves to the players, which should be done as early as possible,
+    // whether that's in pickCountries or placeInitialArmies or placeArmies, depending on game setup.
+    protected boolean madeUserAnnouncement;
+
     public Viking()
     {
         rand = new Random();
@@ -82,6 +86,7 @@ public class Viking implements LuxAgent
         allies = new ArrayList<Integer>();
         firstPlacement = true;
         isTeamingOn = true;
+        madeUserAnnouncement = false;
     }
 
     // Save references
@@ -169,6 +174,11 @@ public class Viking implements LuxAgent
         teamingOn(false);
       }
 
+      // make start-of-game announcement to user
+      // the function will do the appropriate tests to make sure this only happens once
+      // but we have to call the function in several different places for redundancy
+      // just like we do with turning teaming on (pickCountry, placeInitialArmies, and placeArmies)
+      makeUserAnnouncement();
 
       // will be the country we pick; if -1 is passed to the game, it will pick a random country for us
       int pickedCountry = -1;
@@ -398,9 +408,15 @@ public class Viking implements LuxAgent
         // we want teaming on by default, but we don't want to do it every time we place initial armies,
         // because then it will announce it every time
         if (firstPlacement && isTeamingOn) {
-          teamingOn(); // turn teaming on with other Vikings by default
+          teamingOn(false); // turn teaming on with other Vikings by default; passing false tells it not to make an announcement to the user
           firstPlacement = false;
         }
+
+        // make start-of-game announcement to user
+        // the function will do the appropriate tests to make sure this only happens once
+        // but we have to call the function in several different places for redundancy
+        // just like we do with turning teaming on (pickCountry, placeInitialArmies, and placeArmies)
+        makeUserAnnouncement();
 
         // simply call placeArmies(), but we pass 'true' as the second parameter
         // to tell it that we're calling it from placeInitialArmies(), because a few
@@ -428,7 +444,8 @@ public class Viking implements LuxAgent
 
         // on the first turn, if the user hasn't previously turned teaming off
         // (in which case the isTeamingOn boolean will be false)
-        // turn teaming on (and announce it to the users by not passing 'false')
+        // turn teaming on (and, by passing 'false', don't announce it to the users,
+        // because we've already announced that we team by default at the start of the game)
         // if pickCountry() or placeInitialArmies() has been run,
         // this will already have been done; but if the game is set to
         // random countries and random armies (or a starting scenario),
@@ -436,12 +453,37 @@ public class Viking implements LuxAgent
         // and the game will simply start here.
         // for that reason we need to turn teaming on here as well
         if (board.getTurnCount() == 1 && isTeamingOn) {
-          teamingOn();
+          teamingOn(false);
+        }
+
+        // make start-of-game announcement to user
+        // the function will do the appropriate tests to make sure this only happens once
+        // but we have to call the function in several different places for redundancy
+        // just like we do with turning teaming on (pickCountry, placeInitialArmies, and placeArmies)
+        makeUserAnnouncement();
+
+        // check remaining players in the game to see if any enemies are left;
+        // if the only players left are allies (and ourself, of course), we'll turn teaming off
+        int numPlayersTotal = board.getNumberOfPlayers();
+        boolean anyEnemiesLeft = false;
+        for (int player=0; player<numPlayersTotal; player++) {
+          if (BoardHelper.playerIsStillInTheGame(player, countries)) {
+            if (isEnemy(player)) {
+              anyEnemiesLeft = true;
+              break;
+            }
+          }
+        }
+        testChat("placeArmies", "isTeamingOn == " + isTeamingOn);
+        // if there are no enemies left and teaming is on
+        if (!anyEnemiesLeft && isTeamingOn) {
+          testChat("placeArmies", "NO ENEMIES LEFT!!!!!!! ENDING ALLIANCE!!!!!!!!!!!!!!!");
+          teamingOff(); // turn teaming off (announcing it to the user)
         }
 
         // output teaming information for testing purposes
-        int playersTotal = board.getNumberOfPlayers();
-        for (int i=0; i<playersTotal; i++) {
+//        int numPlayersTotal = board.getNumberOfPlayers();
+        for (int i=0; i<numPlayersTotal; i++) {
           if (BoardHelper.playerIsStillInTheGame(i, countries)) {
             if (isAlly(i)) {
               testChat("placeArmies", "Player " + board.getPlayerName(i) + " is in allies.");
@@ -455,7 +497,7 @@ public class Viking implements LuxAgent
         // the <initial> boolean is a flag that tells us if this function
         // was called from placeInitialArmies(); we want to clear <battlePlan>
         // every turn, but we don't want to clear it in between placeInitialArmies()
-        // calls at the beginning of the game (or before the first turn);
+        // calls at the beginning of the game ~~STRIKE?(or before the first turn)STRIKE?~~;
         // <battlePlan> is emptied each turn one path at a time in attackPhase(),
         // so normally it will already be empty here; however, we have to clear it anyway
         // for the special case that placeArmies() was called in the middle of a turn,
@@ -911,6 +953,18 @@ public class Viking implements LuxAgent
               }
             }
           }
+          if (text.equals("viking help") || text.equals("viking about")) {
+            if (isSpokesperson()) {
+              String string = "By default, Viking teams with other Vikings. Viking accepts the following chat commands:\n" +
+           "                  \u2022  \"Viking status\" to determine its current teaming status\n" +
+           "                  \u2022  \"Viking team off\" to turn teaming off\n" +
+           "                  \u2022  \"Viking team on\" to turn teaming on\n" +
+           "                  \u2022  \"Viking help\" to bring up this message\n" +
+           "                  Email ---------@gmail.com to contact Viking's creators (feedback is welcome!)\n";
+              board.sendChat(string);
+            }
+          }
+
         }
       }
       return null;
@@ -920,20 +974,38 @@ public class Viking implements LuxAgent
      *   ********* HELPER / CUSTOM FUNCTIONS *********
      */
 
+     // Make the initial announcement describing Viking's interface to players
+     // This function will be called multiple times throughout the game (to ensure it happens for all possible game options),
+     // but should only do something once (by the spokesperson and when madeUserAnnouncement is false)
+     protected void makeUserAnnouncement() {
+       if (!madeUserAnnouncement && isSpokesperson()) {
+         String string = "By default, Viking teams with other Vikings. Viking accepts the following chat commands:\n" +
+      "                  \u2022 \"Viking status\" to determine its current teaming status\n" +
+      "                  \u2022 \"Viking team off\" to turn teaming off\n" +
+      "                  \u2022 \"Viking team on\" to turn teaming on\n" +
+      "                  \u2022 \"Viking help\" for more information\n";
+         board.sendChat(string);
+         madeUserAnnouncement = true;
+       }
+     }
+
      // turn teaming on with other Vikings
     protected void teamingOn(boolean announce) {
       isTeamingOn = true; // set the global flag to true
       // populate <allies> with the names of all Viking players (except ourselves)
-      int numPlayersLeft = board.getNumberOfPlayersLeft();
-      for (int i=0; i<numPlayersLeft; i++) {
-        if (board.getAgentName(i) == "Viking" && i != ID) { // if this player is a Viking and is not us
-          if (!isInArray(i,allies)) { // also if this player isn't already in the list
-            allies.add(i); // add this Viking to allies
+      int numPlayersTotal = board.getNumberOfPlayers(); // the number of players who started the game
+      // loop through all the players who started the game
+      for (int player=0; player<numPlayersTotal; player++) {
+        // if this player is a Viking and is not us and is still in the game
+        if (BoardHelper.playerIsStillInTheGame(player, countries) && board.getAgentName(player) == "Viking" && player != ID) {
+          if (!isInArray(player,allies)) { // also if this player isn't already in the list
+            allies.add(player); // add this Viking to allies
           }
         }
       }
+
       // if we're the spokesperson, chat that teaming is on
-      if (announce && isSpokesperson()) board.sendChat("Viking is teaming with other Vikings");
+      if (announce && isSpokesperson()) board.sendChat("Viking is now teaming with other Vikings");
     }
     // overloaded version takes announce = true as default
     protected void teamingOn() {
@@ -965,6 +1037,9 @@ public class Viking implements LuxAgent
           }
         }
       }
+      // we'll get here if we're the Viking with the lowest ID of all the Vikings
+      // (which will be the case also if we're the only Viking)
+      // in which case we will be the spokesperson
       return true;
     }
 
