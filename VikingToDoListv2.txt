@@ -4,9 +4,6 @@ List of things to do before publishing:
  - Better and more victory taunts.
  - (not necessary) Add objective to take out huge armies?
  - Tweak border strength/behavior as outlined below
- - End alliance when all enemies are gone
- - Decide on opening announcements (re: teaming, etc)
- - add a user help command
 
 12/3/19:
 We got rid of the scaling factor for borders based on how important the continent is compared to the highest income continent.  Borders still seem a bit skimpy, especially early on in the game.  We thought it might be nice if we could limit an individual turn's border contributions to income/2 (or over 1.5 maybe?), but then add to them more over succesive turns.  So, we thought border setBorderStrength could simply limit itself to income/2 more than what's on there now.  However, we don't want to simply check actual extant armies, as there could be more armies on a border because that's the staging point for another objective, like a knockout.  But, we are resetting the border armies already, and perhaps we can ride on that.

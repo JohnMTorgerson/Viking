@@ -164,7 +164,9 @@ public class Viking implements LuxAgent
     //          preferring continents with the fewest unowned countries
     //          in the event of a tie, weighting advantage for us vs disadvantage to the enemy
     // PHASE 2: Once every continent is either full or has more than one owner (who isn't an ally)
-    //          ...we don't know yet what we'll do here
+    //          we score all the continents that aren't yet full (excluding those solely populated by an ally)
+    //          by bonus / number of borders, and number of countries we own in it / total countries in it
+    //          thereby we choose the most worthwhile continent that we are likely to be able to get and to keep
     public int pickCountry() {
       // turn teaming on during every pick country turn,
       // because doing so only on the first turn will fail to find potential allies
@@ -319,7 +321,12 @@ public class Viking implements LuxAgent
       return -1; // we shouldn't get here unless something went wrong
     }
 
-    // phase 2 of pickCountry... we don't know what we'll put here yet
+    // PHASE 2: Once every continent is either full or has more than one owner (who isn't an ally)
+    //          we score all the continents that aren't yet full (excluding those solely populated by an ally)
+    //          by bonus / number of borders, and number of countries we own in it / total countries in it
+    //          thereby we choose the most worthwhile continent that we are likely to be able to get and to keep
+    //          because we prefer few borders and we prefer continents that we already have a lot of countries in
+    //          (this approach also has the added benefit of avoiding continents with negative bonuses as long as possible)
     protected int pickCountryPhase2() {
       ArrayList<HashMap> P2Continents = new ArrayList<HashMap>();
       // loop through all continents
