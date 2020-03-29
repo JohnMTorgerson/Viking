@@ -122,7 +122,7 @@ public class Viking implements LuxAgent
 //            "pickCountryPhase1",
 //            "pickCountryPhase2",
 //            "placeInitialArmies",
-            "placeArmies",
+//            "placeArmies",
 //            "attackPhase",
 //            "moveArmiesIn",
 //            "fortifyPhase",
@@ -927,7 +927,59 @@ public class Viking implements LuxAgent
         // For variety we store a bunch of answers and pick one at random to return.
         String[] answers = new String[] {
             "I won",
-            "beees?!"
+
+            "beees?!",
+
+            "Brothers will fight and kill each other,\n" +
+            "Sisters' children will defile kinship.\n" +
+            "It is harsh in the world, whoredom rife.\n" +
+            "An axe age, a sword age,\n" +
+            "Shields are riven,\n" +
+            "A wind age, a wolf age,\n" +
+            "Before the world goes headlong.\n" +
+            "No man will have mercy on another.\n\n" +
+            "- V\u00F6lusp\u00E1",
+
+            "I am the unknown Will,\n" +
+            "The Anger that threatens glory and ruin:\n" +
+            "Lord of Storms am I,\n" +
+            "in heaven high and caverns deep.\n\n" +
+            "- Odin",
+
+            "This thing is beyond your understanding, my child. Think no further on the matter and maybe you will read the riddle in the end. Who knows? Meanwhile the air is fresh and the day golden and my palace is near at hand. The young should enjoy themselves while they may, so come!\n\n" +
+            "- Odin",
+
+            "N\u00fa's hersis hefnd\n" +
+            "vi\u00f0 hilmi efnd;\n" +
+            "gengr ulfr ok \u00f6rn\n" +
+            "of ynglings b\u00f6rn.\n" +
+            "Flugu h\u00f6ggvin hr\u00e6\n" +
+            "Hallvar\u00f0s \u00e1 s\u00e6.\n" +
+            "Gr\u00e1r sl\u00edtr undir\n" +
+            "ari Snarfara.\n\n" +
+            "- Skalla-Gr\u00edmr",
+
+            "Nothing is ever finished, nothing is ever perfect, but over and over again the race of men gets another chance to do better than last time, ever and again without end.\n\n" +
+            "- Robert A. Heinlein on Ragnar\u00F6k",
+
+            "How could man rejoice in victory and delight in the slaughter of men?\n\n" +
+            "- Lao Tzu",
+
+            "The struggle alone pleases us, not the victory.\n\n" +
+            "- Blaise Pascal",
+
+            "In their eyes as they pass is not hatred, not excitement, not despair, not the tonic of their victory - there is just the simple expression of being here as though they had been here doing this forever, and nothing else.\n\n" +
+            "- Ernie Pyle",
+
+            "Every gun that is made, every warship launched, every rocket fired, signifies in the final sense a theft from those who hunger and are not fed, those who are cold and are not clothed.\n\n" +
+            "- Dwight D. Eisenhower",
+
+            "There is no hunting like the hunting of man, and those who have hunted armed men long enough and liked it, never care for anything else thereafter.\n\n" +
+            "- Ernest Hemingway",
+
+            "It is forbidden to kill; therefore all murderers are punished unless they kill in large numbers and to the sound of trumpets.\n\n" +
+            "- Voltaire"
+
         };
 
         return answers[ rand.nextInt(answers.length) ];
@@ -942,14 +994,17 @@ public class Viking implements LuxAgent
         if (!chatData.get(0).toString().equals("Viking (AI)")) {
           String text = (String) chatData.get(1);
           text = text.toLowerCase(); // to make it not case sensitive
+
           // for these commands, empty the list of allies to stop teaming with anyone
           if (text.equals("viking alone") || text.equals("viking team off") || text.equals("viking teaming off")) {
             teamingOff();
           }
+
           // turn teaming on (with other Vikings)
           if (text.equals("viking together") || text.equals("viking team on") || text.equals("viking teaming on")) {
             teamingOn();
           }
+
           // report teaming status
           if (text.equals("viking status") || text.equals("viking team status") || text.equals("viking teaming status")) {
             if (isSpokesperson()) {
@@ -960,6 +1015,8 @@ public class Viking implements LuxAgent
               }
             }
           }
+
+          // help command
           if (text.equals("viking help") || text.equals("viking about")) {
             if (isSpokesperson()) {
               String string = "By default, Viking teams with other Vikings. Viking accepts the following chat commands:\n" +
@@ -967,12 +1024,29 @@ public class Viking implements LuxAgent
            "                  \u2022  \"Viking team off\" to turn teaming off\n" +
            "                  \u2022  \"Viking team on\" to turn teaming on\n" +
            "                  \u2022  \"Viking help\" to bring up this message\n" +
-           "                  Email ---------@gmail.com to contact Viking's creators (feedback is welcome!)\n";
+           "                  Version 1.0. Viking was created by Tor and Vor.\n" +
+           "                  Email TorVor.Viking@gmail.com to contact Viking's creators (feedback is welcome!) Sk\u00E5l!!\n";
               board.sendChat(string);
             }
           }
-
         }
+      }
+      if (message == "youLose") {
+        // I think this is how we find out we lost; will have to test later
+        String[] answers = new String[] {
+            "\"Even for my kind, pain still hurts. If you move and act in the material world, then the material world acts on you. Pain hurts, just as greed intoxicates and lust burns. We may not die easy and we sure as hell don't die well, but we can die. If we're still loved and remembered, something else a whole lot like us comes along and takes our place and the whole damn thing starts all over again. And if we're forgotten, we're done.\"  -Odin",
+            "\"If a victory is told in detail, one can no longer distinguish it from a defeat.\" -Jean-Paul Sartre",
+            "\"No nation ever had an army large enough to guarantee it against attack in time of peace, or ensure it of victory in time of war.\" -Calvin Coolidge",
+            "\"Are we now deserving \nWhen our cyborg parts are burning? \nI know we're just diseased appliances \nWhere will you live? What will you die for? \nJust because we don't feel flesh \nDoesn't mean we don't fear death\" \n-Crystal Castles",
+            "\"When all the world is overcharged with inhabitants, then the last remedy of all is war, which provideth for every man, by victory or death.\" -Thomas Hobbes",
+            "\"On the plains of hesitation lie the blackened bones of countless millions who at the dawn of victory lay down to rest, and in resting died.\" -Adlai Stevenson I",
+            "\"I hate war as only a soldier who has lived it can, only as one who has seen its brutality, its futility, its stupidity.\" -Dwight D. Eisenhower",
+            "\"Victory has a thousand fathers, but defeat is an orphan.\" -John F. Kennedy",
+            "\"There are not enough Indians in the world to defeat the Seventh Cavalry.\" -George Armstrong Custer",
+
+        };
+
+        board.sendChat(answers[ rand.nextInt(answers.length) ]);
       }
       return null;
     }
@@ -3313,7 +3387,7 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
         // loop through all the neighbors, adding all enemy neighbors to the <enemyNeighbors> list
         for (int neighbor : neighbors) { // loop through all neighbors
             // if <country> can attack into <neighbor> and we don't own (or plan to own) <neighbor> and it isn't in the blacklist
-            if (countries[country].canGoto(neighbor) && getProjectedCountryOwner(neighbor) != ID && !isInArray(neighbor, blacklist)) {
+            if (countries[country].canGoto(neighbor) && isEnemy(getProjectedCountryOwner(neighbor)) && !isInArray(neighbor, blacklist)) {
                 enemyNeighbors.add(neighbor); // then add it to the list of enemy neighbors
             }
         }
@@ -3355,6 +3429,10 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
             }
         }
 
+        // if the list of
+        if (chosenCountry == -1) {
+
+        }
 //        testChat("findWeakestNeighborOwnedByStrongestEnemy","Weakest neighbor owned by strongest enemy: " + getCountryName(chosenCountry));
 
         // return the chosen country
