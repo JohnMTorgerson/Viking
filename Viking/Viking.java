@@ -1071,22 +1071,33 @@ public class Viking implements LuxAgent
      }
 
      // turn teaming on with other Vikings
-    protected void teamingOn(boolean announce) {
+    protected void teamingOn(boolean announce, boolean withHumans) {
       isTeamingOn = true; // set the global flag to true
       // populate <allies> with the names of all Viking players (except ourselves)
       int numPlayersTotal = board.getNumberOfPlayers(); // the number of players who started the game
       // loop through all the players who started the game
       for (int player=0; player<numPlayersTotal; player++) {
         // if this player is a Viking and is not us and is still in the game
-        if (BoardHelper.playerIsStillInTheGame(player, countries) && board.getAgentName(player) == "Viking" && player != ID) {
-          if (!isInArray(player,allies)) { // also if this player isn't already in the list
-            allies.add(player); // add this Viking to allies
+        if (BoardHelper.playerIsStillInTheGame(player, countries)) {
+          if (board.getAgentName(player) == "Viking" && player != ID) {
+            if (!isInArray(player,allies)) { // also if this player isn't already in the list
+              allies.add(player); // add this Viking to allies
+            }
+          }
+          else if (board.getAgentName(player) == "Human" && withHumans) {
+            if (!isInArray(player,allies)) { // also if this player isn't already in the list
+              allies.add(player); // add this Human to allies
+            }
           }
         }
       }
 
       // if we're the spokesperson, chat that teaming is on
-      if (announce && isSpokesperson()) board.sendChat("Viking is now teaming with other Vikings");
+      if (announce && isSpokesperson()) board.sendChat("Viking is now teaming with other Vikings" + (withHumans ? " and Humans" : ""));
+    }
+    // overloaded version takes withHumans = false as default
+    protected void teamingOn(boolean announce) {
+      teamingOn(announce,false);
     }
     // overloaded version takes announce = true as default
     protected void teamingOn() {
