@@ -70,6 +70,8 @@ public class Viking implements LuxAgent
 
     // to remember whether teaming is on or off; will be on by default, but if the user turns it off, we'll need to know that in a few different places
     protected boolean isTeamingOn;
+    // teaming with humans will be off by default
+    protected boolean isTeamingWithHumans;
 
     //to remember whether we've introduced ourselves to the players, which should be done as early as possible,
     // whether that's in pickCountries or placeInitialArmies or placeArmies, depending on game setup.
@@ -86,6 +88,7 @@ public class Viking implements LuxAgent
         allies = new ArrayList<Integer>();
         firstPlacement = true;
         isTeamingOn = true;
+        isTeamingWithHumans = false;
         madeUserAnnouncement = false;
     }
 
@@ -172,8 +175,9 @@ public class Viking implements LuxAgent
       // because doing so only on the first turn will fail to find potential allies
       // who have not yet had a turn; passing 'false' tells it not to make an announcement to the user
       // so we don't do that multiple times
+      // (the second parameter will turn on teaming with humans if that variable is true)
       if (isTeamingOn) {
-        teamingOn(false);
+        teamingOn(false,isTeamingWithHumans);
       }
 
       // make start-of-game announcement to user
@@ -414,8 +418,9 @@ public class Viking implements LuxAgent
         // (as long as the user hasn't previously turned it off, e.g. in the pick countries phase, hence the isTeamingOn check)
         // we want teaming on by default, but we don't want to do it every time we place initial armies,
         // because then it will announce it every time
+        // (and if we are teaming with humans, turn that on too)
         if (firstPlacement && isTeamingOn) {
-          teamingOn(false); // turn teaming on with other Vikings by default; passing false tells it not to make an announcement to the user
+          teamingOn(false,isTeamingWithHumans); // turn teaming on with other Vikings by default; passing false tells it not to make an announcement to the user
           firstPlacement = false;
         }
 
@@ -460,7 +465,7 @@ public class Viking implements LuxAgent
         // and the game will simply start here.
         // for that reason we need to turn teaming on here as well
         if (board.getTurnCount() == 1 && isTeamingOn) {
-          teamingOn(false);
+          teamingOn(false,isTeamingWithHumans);
         }
 
         // make start-of-game announcement to user
@@ -1005,11 +1010,20 @@ public class Viking implements LuxAgent
             teamingOn();
           }
 
+          // turn teaming on with other Humans
+          if (text.equals("viking team with humans") || text.equals("viking teaming with humans")) {
+            teamingOn(true,true);
+          }
+
           // report teaming status
           if (text.equals("viking status") || text.equals("viking team status") || text.equals("viking teaming status")) {
             if (isSpokesperson()) {
               if (isTeamingOn) {
-                board.sendChat("Viking is teaming with other Vikings");
+                if (isTeamingWithHumans) {
+                    board.sendChat("Viking is teaming with other Vikings and Humans");
+                } else {
+                    board.sendChat("Viking is teaming with other Vikings");
+                }
               } else {
                 board.sendChat("Vikings are NOT teaming");
               }
@@ -1023,6 +1037,7 @@ public class Viking implements LuxAgent
            "                  \u2022  \"Viking status\" to determine its current teaming status\n" +
            "                  \u2022  \"Viking team off\" to turn teaming off\n" +
            "                  \u2022  \"Viking team on\" to turn teaming on\n" +
+           "                  \u2022  \"Viking team with humans\" to team with all human players (and other Vikings)\n" +
            "                  \u2022  \"Viking help\" to bring up this message\n" +
            "                  Version 1.0. Viking was created by Tor and Vor.\n" +
            "                  Email TorVor.Viking@gmail.com to contact Viking's creators (feedback is welcome!) Sk\u00E5l!!\n";
@@ -1064,6 +1079,7 @@ public class Viking implements LuxAgent
       "                  \u2022 \"Viking status\" to determine its current teaming status\n" +
       "                  \u2022 \"Viking team off\" to turn teaming off\n" +
       "                  \u2022 \"Viking team on\" to turn teaming on\n" +
+      "                  \u2022 \"Viking team with humans\" to team with humans\n" +
       "                  \u2022 \"Viking help\" for more information\n";
          board.sendChat(string);
          madeUserAnnouncement = true;
@@ -1107,6 +1123,7 @@ public class Viking implements LuxAgent
     // turn teaming off
     protected void teamingOff(boolean announce) {
       isTeamingOn = false; // set the global flag to false
+      isTeamingWithHumans = false;
       allies.clear(); // clear list of allies
       // if we're the spokesperson, chat that teaming is off
       if (announce && isSpokesperson()) board.sendChat("Viking is no longer teaming");

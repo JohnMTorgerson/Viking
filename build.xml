@@ -4,9 +4,10 @@
 	<!-- Edit these properties to fit your build environment. 
 		 Then you will be able to run the 'ant dist' command to re-compile 
 		 and deploy your file to where Lux will find it. -->
-	<property name="built_file" location="build/com/sillysoft/lux/agent/YourClassName.class" />
+	<property name="built_file" location="build/com/sillysoft/lux/agent/Viking.class" />
 	<property name="lux_agent_folder" location="${user.home}/Library/Application Support/Lux/Agents/" />
 	<property name="lux_mapgen_folder" location="${user.home}/Library/Application Support/Lux/MapGenerators/" />
+	<property name="sdk" location="/Volumes/2TB-SSD/Coding/LuxProject/SillysoftSDK/src/" />
   
   
 	<!-- Move your agent class into Lux's agent folder (switch it to lux_mapgen_folder if needed) -->
@@ -27,9 +28,10 @@
 			debug="true" 
 			debuglevel="lines,vars,source" 
 			includeantruntime="false"
-			target="1.6"
-			source="1.6" >
-	    <compilerarg value="-XDignore.symbol.file"/>
+			release="8"
+			classpath="${sdk}"
+			>
+			<compilerarg value="-XDignore.symbol.file"/>
 	    </javac>
 	</target>
 
