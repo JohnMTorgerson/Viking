@@ -3,6 +3,7 @@ package com.sillysoft.lux.agent;
 import com.sillysoft.lux.*;
 import com.sillysoft.lux.util.*;
 import java.util.*;
+import java.util.regex.Pattern;
 
 //
 //  Viking.java
@@ -125,7 +126,7 @@ public class Viking implements LuxAgent
 //            "pickCountryPhase1",
 //            "pickCountryPhase2",
 //            "placeInitialArmies",
-//            "placeArmies",
+        //    "placeArmies",
 //            "attackPhase",
 //            "moveArmiesIn",
 //            "fortifyPhase",
@@ -148,6 +149,8 @@ public class Viking implements LuxAgent
 //            "calculateWipeoutObjective",
 //            "findContiguousAreas",
 //            "calculateTakeoverObjective",
+            // "findTakeoverObjectives",
+            // "findKnockoutObjectives",
             ""
         };
 
@@ -547,10 +550,10 @@ public class Viking implements LuxAgent
         masterObjectiveList.clear();
 
         // find and add list of objectives to knockout enemy bonuses
-        masterObjectiveList.addAll(findKnockoutObjectives());
+        masterObjectiveList.addAll(findKnockoutObjectives(initial));
 
         // find and add list of continent takeover objectives
-        masterObjectiveList.addAll(findTakeoverObjectives());
+        masterObjectiveList.addAll(findTakeoverObjectives(initial));
 
         // create and add landgrab objective
         masterObjectiveList.add(calculateLandgrabObjective(numberOfArmies));
@@ -1831,11 +1834,18 @@ public class Viking implements LuxAgent
     //
     // this information should be enough for placeArmies() to prioritize takeover objectives
     // each turn based on the number of armies available and balanced against other types of objectives (such as knockout objectives)
-    protected ArrayList<HashMap> findTakeoverObjectives() {
+    // <initial> tells us if we're in the placeInitialArmies phase
+    protected ArrayList<HashMap> findTakeoverObjectives(boolean initial) {
         ArrayList<HashMap> objectiveList = new ArrayList<HashMap>();
 
         // loop through all the areas to create an "objective" hashmap for each one and add it to objectiveList
         for (int[] area : smartAreas) {
+
+            // hack to skip Greenland on the Global map for placeInitialArmies
+            if (initial && area.length == 1 && Pattern.matches("Global\\sRisk",board.getMapTitle())) {// && getCountryName(area[0]) == "Greenland") {
+                testChat("findTakeoverObjectives","Skipping " + getCountryName(area[0]) + " for place initial armies takeover obj");
+                continue;
+            }
 
             // create takeover objective of this area
             HashMap<String, Object> objective = calculateTakeoverObjective(area);
@@ -1856,6 +1866,9 @@ public class Viking implements LuxAgent
         }
 
         return objectiveList;
+    }
+    protected ArrayList<HashMap> findTakeoverObjectives() {
+        return findTakeoverObjectives(false);
     }
 
     protected HashMap<String, Object> calculateTakeoverObjective(int[] area) {
@@ -2023,13 +2036,13 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
 
 		return alliedLoss;
 	}
-  // overloaded version to handle arraylists
-  protected float findAlliedLoss(ArrayList<Integer> countryList) {
-      return findAlliedLoss(convertListToIntArray(countryList));
-  }
+    // overloaded version to handle arraylists
+    protected float findAlliedLoss(ArrayList<Integer> countryList) {
+        return findAlliedLoss(convertListToIntArray(countryList));
+    }
 
     // sort in place an arraylist of objectives
-    // by the value of sortKey (only if that value is an integer)
+    // by the value of sortKey (only if that value is a number)
     protected void sortObjectives(ArrayList<HashMap> list, String sortKey) {
         // if there's nothing in the list
         // simply return the original list
@@ -2149,13 +2162,19 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
 
     // finds all continents that are completely owned and returns an arraylist containing an Objective (hashmap) for each of them
     // Objective hashmaps for knocking out bonuses contain the cost to knock out the continent bonus, the continent bonus, the enemy's current income, an attack path to get to the continent, and where to place armies to execute the attack path
-    protected ArrayList<HashMap> findKnockoutObjectives() {
+    protected ArrayList<HashMap> findKnockoutObjectives(boolean initial) {
         ArrayList<HashMap> objectiveList = new ArrayList<HashMap>();
 
         // loop through all the continents on the board
         // if the continent is fully owned, find all the values we want and put them in a hashmap
         // add the hashmap to objectiveList
         for(int continent=0; continent<numConts; continent++) { // loop through all the continents
+            // // skip Greenland knockouts on Global map during initial placement
+            // if (initial && continent == 5 && Pattern.matches("Global\\sRisk",board.getMapTitle())) {
+            //     testChat("findKnockoutObjectives","Skipping Greenland knockout objective on Global Risk map");
+            //     continue;
+            // }
+
             HashMap<String, Object> objective = new HashMap<String, Object>(); // the Objective hashmap for this continent
             objective = calculateKnockoutObjective(continent);
             if (objective != null) {
@@ -2164,6 +2183,9 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
 
         }
         return objectiveList;
+    }
+    protected ArrayList<HashMap> findKnockoutObjectives() {
+        return findKnockoutObjectives(false);
     }
 
     // creates/calculates knockout objective for the given continent
@@ -2236,7 +2258,7 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
     // for all the border countries of all the areas we've decided to take over;
     // this function resets those values to equal the number of armies actually on each country in the hashmap
     // (or removes the country from the hashmap if we no longer own it);
-    // we do this at the beginning of each turn; see placeArmies() where the function is called for why;
+    // we do this at the beginning of each turn; see placeArmies(), where the function is called, for why;
     // also removes any countries from <idealBorderArmies> that we no longer own, but does not adjust the values
     // of the ones we still do own
     protected void resetBorderArmies() {
@@ -2328,7 +2350,8 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
             // but the garrison will be allowed to grow each turn until it reaches the ideal value
 
             // reevaluate above comment block at some point ^^ if we keep this change
-            strength = (int) Math.ceil(Math.min(idealStrength,  (double) income / 2));
+            // (the change being to hard-cap the border strength to some fraction of income)
+            strength = (int) Math.ceil(Math.min(idealStrength, 2.0d * (double) income / 3.0d));
 //            strength = (int) Math.ceil(Math.min(idealStrength * areaValue,  (double) income / 2));//extantArmies + incomePortion)); <-- commenting out the incremental limit for now because it doesn't work very well; we'll come back to it
 
             testChat("calculateBorderStrength", "Border strength of " + countries[country].getName() + " is " + strength);
