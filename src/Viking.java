@@ -864,7 +864,10 @@ public class Viking implements LuxAgent
                     while (extraArmies > 0) { // attack another country on each loop until we run out of armies
                         int defendingCountry = findWeakestNeighborOwnedByStrongestEnemy(attackingCountry); // pick the best enemy neighbor to attack
                         if (defendingCountry == -1) { // if the above function returned -1, it didn't find any enemy neighbors
-                            break; // so break the while loop, since we can't attack anyone
+                            defendingCountry = findWeakestNeighborNotInAlliedAreaWithEnemyNeighbor(attackingCountry); // so attack an allied neighbor, so long as it has an enemy neighbor and isn't part of an area wholly owned by that ally
+                            if (defendingCountry == -1) {
+                                break; // so break the while loop, since we can't attack anyone
+                            }
                         }
                         leaveArmies = checkBorderStrength(attackingCountry); // <leaveArmies> is a global variable that tells moveArmiesIn() how many armies to leave behind after an attack
                         board.attack(attackingCountry,defendingCountry,true); // attack the country we picked
@@ -3496,6 +3499,69 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
         return findWeakestNeighborOwnedByStrongestEnemy(country, new ArrayList<Integer>());
     }
 
+    protected int findWeakestNeighborNotInAlliedAreaWithEnemyNeighbor(int country) {
+        int[] neighbors = BoardHelper.getAttackList(countries[country], countries);
+
+        int leastArmies = Integer.MAX_VALUE;
+
+        // loop over the neighbors to find the least number of armies
+        for(int neighbor : neighbors) {
+            if (countries[neighbor].getOwner() == ID) {
+                continue;
+            }
+
+            int armies = countries[country].getArmies();
+            if (armies < leastArmies) {
+                leastArmies = armies;
+            }
+        }
+
+        List<Integer> neighborList = convertIntArrayToList(neighbors);
+        ListIterator<Integer> iter = neighborList.listIterator(neighborList.size());
+        while (iter.hasPrevious()) { // iterating backwards over the list should be faster when removing elements
+            int neighbor = iter.previous(); // this country
+            int armies = countries[neighbor].getArmies(); // this country's number of armies
+
+            // if this country is ours, has more armies than the weakest neighbor, is part of an allied area, or doesn't itself have any enemy neighbors
+            if (armies > leastArmies || countries[neighbor].getOwner() == ID || isInAlliedArea(neighbor) || !hasEnemyNeighbor(neighbor)) {
+                iter.remove(); // remove it
+            }
+        }
+
+        if (neighborList.size() > 0) {
+            return neighborList.get(0);
+        } else {
+            return -1;
+        }
+
+    }
+
+    protected boolean hasEnemyNeighbor(int country) {
+        int[] neighbors = countries[country].getAdjoiningCodeList();
+        for (int neighbor : neighbors) {
+            // if this neighbor is an enemy, we're done, return true
+            if (isEnemy(countries[neighbor].getOwner())) {
+                return true;
+            }
+        }
+        // no enemies were found, so return false
+        return false;
+    }
+
+    protected boolean isInAlliedArea(int country) {
+        for (int[] area : smartAreas) {
+            for (int c : area) {
+                if (c == country) {
+                    if (anyAllyOwnsArea(area)) {
+                        return true;
+                    }
+                    break;
+                }
+            }
+        }
+        return false;
+    }
+
     // returns the country code of an enemy country that this country can attack,
     // preferring ones with few armies and many enemy neighbors, with much more weight assigned to army count
     // (in the event of a tie, it chooses the one owned by the strongest enemy);
@@ -3668,18 +3734,12 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
 
     //returns true if <player> is an enemy, i.e. not self and not an ally.
     protected boolean isEnemy(int player) {
-        if  (player != ID && !isAlly(player)) {
-           return true;
-        }
-        return false;
+        return player != ID && !isAlly(player);
     }
 
     //returns true if <player> is an ally.
     protected boolean isAlly(int player) {
-       if (isInArray(player, allies)) {
-          return true;
-       }
-       return false;
+       return isInArray(player, allies);
     }
 
     protected int[] getEnemies() {
@@ -3717,6 +3777,12 @@ protected float findEnemyLoss(ArrayList<Integer> countryList) {
       return false;
 
     }
+
+    // helper function to see if any ally or we ourself owns an area
+    protected boolean anyAllyOrSelfOwnsArea(int[] area) {
+        return playerOwnsArea(area,ID) || anyAllyOwnsArea(area);
+    }
+
 
     // helper function to return the summary magnitude of all continent bonuses completely contained within <area>
     // we should never have duplicate countries in an area,
